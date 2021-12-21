@@ -80,10 +80,7 @@ fn fake_full_tx(tx_builder: &TransactionBuilder, body: TransactionBody) -> Resul
     };
     let script_keys: Option<NativeScripts> = match tx_builder.input_types.scripts.len() {
         0 => None,
-        _x => {
-            // TODO: figure out how to populate fake witnesses for these
-            return Err(JsError::from_str("Script inputs not supported yet"))
-        },
+        _x => None
     };
     let bootstrap_keys = match tx_builder.input_types.bootstraps.len() {
         0 => None,
@@ -117,9 +114,9 @@ fn fake_full_tx(tx_builder: &TransactionBuilder, body: TransactionBody) -> Resul
         native_scripts: full_script_keys,
         bootstraps: bootstrap_keys,
         // TODO: plutus support?
-        plutus_scripts: None,
-        plutus_data: None,
-        redeemers: None,
+        plutus_scripts: tx_builder.plutus_scripts.clone(),
+        plutus_data: tx_builder.plutus_data.clone(),
+        redeemers: tx_builder.redeemers.clone(),
     };
     Ok(Transaction {
         body,
@@ -145,7 +142,7 @@ fn min_fee(tx_builder: &TransactionBuilder) -> Result<Coin, JsError> {
         }
     }
     let full_tx = fake_full_tx(tx_builder, tx_builder.build()?)?;
-    fees::min_fee(&full_tx, &tx_builder.config.fee_algo)
+    fees::min_fee(&full_tx, &tx_builder.config.fee_algo, tx_builder.config.price_mem, tx_builder.config.price_step)
 }
 
 
@@ -178,6 +175,9 @@ pub struct TransactionBuilderConfig {
     max_value_size: u32,       // protocol parameter
     max_tx_size: u32,          // protocol parameter
     coins_per_utxo_word: Coin, // protocol parameter
+    price_mem: f64,
+    price_step: f64,
+    cost_models: Costmdls,
     prefer_pure_change: bool,
 }
 
@@ -190,6 +190,9 @@ pub struct TransactionBuilderConfigBuilder {
     max_value_size: Option<u32>,       // protocol parameter
     max_tx_size: Option<u32>,          // protocol parameter
     coins_per_utxo_word: Option<Coin>, // protocol parameter
+    price_mem: Option<f64>,
+    price_step: Option<f64>,
+    cost_models: Option<Costmdls>,
     prefer_pure_change: bool,
 }
 
@@ -203,6 +206,9 @@ impl TransactionBuilderConfigBuilder {
             max_value_size: None,
             max_tx_size: None,
             coins_per_utxo_word: None,
+            price_mem: None,
+            price_step: None,
+            cost_models: None,
             prefer_pure_change: false,
         }
     }
@@ -243,6 +249,24 @@ impl TransactionBuilderConfigBuilder {
         cfg
     }
 
+    pub fn price_mem(&self, price_mem: f64) -> Self {
+        let mut cfg = self.clone();
+        cfg.price_mem = Some(price_mem);
+        cfg
+    }
+
+    pub fn price_step(&self, price_step: f64) -> Self {
+        let mut cfg = self.clone();
+        cfg.price_step = Some(price_step);
+        cfg
+    }
+
+    pub fn cost_models(&self, cost_models: Costmdls) -> Self {
+        let mut cfg = self.clone();
+        cfg.cost_models = Some(cost_models);
+        cfg
+    }
+
     pub fn prefer_pure_change(&self, prefer_pure_change: bool) -> Self {
         let mut cfg = self.clone();
         cfg.prefer_pure_change = prefer_pure_change;
@@ -258,6 +282,9 @@ impl TransactionBuilderConfigBuilder {
             max_value_size: cfg.max_value_size.ok_or(JsError::from_str("uninitialized field: max_value_size"))?,
             max_tx_size: cfg.max_tx_size.ok_or(JsError::from_str("uninitialized field: max_tx_size"))?,
             coins_per_utxo_word: cfg.coins_per_utxo_word.ok_or(JsError::from_str("uninitialized field: coins_per_utxo_word"))?,
+            price_mem: cfg.price_mem.ok_or(JsError::from_str("uninitialized field: price_mem"))?,
+            price_step: cfg.price_step.ok_or(JsError::from_str("uninitialized field: price_step"))?,
+            cost_models: cfg.cost_models.ok_or(JsError::from_str("uninitialized field: cost_models"))?,
             prefer_pure_change: cfg.prefer_pure_change,
         })
     }
@@ -273,6 +300,11 @@ pub struct TransactionBuilder {
     ttl: Option<Slot>, // absolute slot number
     certs: Option<Certificates>,
     withdrawals: Option<Withdrawals>,
+    collateral: Option<TransactionInputs>,
+    required_signers: Option<Ed25519KeyHashes>,
+    plutus_data: Option<PlutusList>,
+    redeemers: Option<Redeemers>,
+    plutus_scripts: Option<PlutusScripts>,
     auxiliary_data: Option<AuxiliaryData>,
     validity_start_interval: Option<Slot>,
     input_types: MockWitnessSet,
@@ -602,6 +634,32 @@ impl TransactionBuilder {
         };
     }
 
+    pub fn set_collateral(&mut self, collateral: &TransactionInputs) {
+        self.collateral = Some(collateral.clone())
+    }
+
+    pub fn set_plutus_data(&mut self, plutus_data: &PlutusList) {
+        self.plutus_data = Some(plutus_data.clone())
+    }
+    pub fn set_redeemers(&mut self, redeemers: &Redeemers) {
+        self.redeemers = Some(redeemers.clone())
+    }
+    pub fn set_plutus_scripts(&mut self, plutus_scripts: &PlutusScripts) {
+        self.plutus_scripts = Some(plutus_scripts.clone())
+    }
+    pub fn set_required_signers(&mut self, required_signers: &Ed25519KeyHashes) {
+        self.required_signers = Some(required_signers.clone());
+        for required_signer in &required_signers.0 {
+            self.input_types.vkeys.insert(required_signer.clone());
+        };
+    }
+
+    pub fn index_of_input(&self, input: &TransactionInput) -> usize {
+        let mut inputs = self.inputs.iter().map(|TxBuilderInput {input,amount: _}| input.clone()).collect::<Vec<TransactionInput>>();
+        inputs.sort();
+        inputs.iter().position(|i| i == input).unwrap()
+    }
+
     pub fn get_auxiliary_data(&self) -> Option<AuxiliaryData> {
         self.auxiliary_data.clone()
     }
@@ -775,6 +833,11 @@ impl TransactionBuilder {
             ttl: None,
             certs: None,
             withdrawals: None,
+            collateral: None,
+            required_signers: None,
+            plutus_data: None,
+            redeemers: None,
+            plutus_scripts: None,
             auxiliary_data: None,
             input_types: MockWitnessSet {
                 vkeys: BTreeSet::new(),
@@ -1086,9 +1149,12 @@ impl TransactionBuilder {
             validity_start_interval: self.validity_start_interval,
             mint: self.mint.clone(),
             // TODO: update for use with Alonzo
-            script_data_hash: None,
-            collateral: None,
-            required_signers: None,
+            script_data_hash: match &self.redeemers {
+                None => None,
+                Some(_) => Some(utils::hash_script_data(&self.redeemers.clone().unwrap(), &self.config.cost_models.clone(), self.plutus_data.clone())),
+            },
+            collateral: self.collateral.clone(),
+            required_signers: self.required_signers.clone(),
             network_id: None,
         };
         // we must build a tx with fake data (of correct size) to check the final Transaction size
@@ -1160,7 +1226,9 @@ mod tests {
     const MAX_TX_SIZE: u32 = 8000; // might be out of date but suffices for our tests
     // this is what is used in mainnet
     static COINS_PER_UTXO_WORD: u64 = 34_482;
-
+    const PRICE_MEM: f64 = 0.0; // mock
+    const PRICE_STEPS: f64 = 0.0; // mock
+ 
     fn genesis_id() -> TransactionHash {
         TransactionHash::from([0u8; TransactionHash::BYTE_COUNT])
     }
@@ -1175,6 +1243,30 @@ mod tests {
         Ed25519KeyHash::from_bytes(
             vec![x, 239, 181, 120, 142, 135, 19, 200, 68, 223, 211, 43, 46, 145, 222, 30, 48, 159, 239, 255, 213, 85, 248, 39, 204, 158, 225, 100]
         ).unwrap()
+    }
+
+    fn mock_cost_models() -> Costmdls {
+        let plutus_cost_model = CostModel::from_bytes(vec![
+            159, 26, 0, 3, 2, 89, 0, 1, 1, 26, 0, 6, 11, 199, 25, 2, 109, 0, 1, 26, 0, 2, 73, 240, 25, 3, 232, 0, 1, 26, 0,
+            2, 73, 240, 24, 32, 26, 0, 37, 206, 168, 25, 113, 247, 4, 25, 116, 77, 24, 100, 25, 116, 77, 24, 100, 25, 116, 77,
+            24, 100, 25, 116, 77, 24, 100, 25, 116, 77, 24, 100, 25, 116, 77, 24, 100, 24, 100, 24, 100, 25, 116, 77, 24, 100,
+            26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 25, 3, 232, 0,
+            1, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 25, 3, 232, 0, 8, 26, 0, 2, 66, 32, 26, 0, 6, 126, 35, 24, 118, 0,
+            1, 1, 26, 0, 2, 73, 240, 25, 3, 232, 0, 8, 26, 0, 2, 73, 240, 26, 0, 1, 183, 152, 24, 247, 1, 26, 0, 2, 73, 240, 25,
+            39, 16, 1, 26, 0, 2, 21, 94, 25, 5, 46, 1, 25, 3, 232, 26, 0, 2, 73, 240, 25, 3, 232, 1, 26, 0, 2, 73, 240, 24, 32,
+            26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 1, 1, 26, 0, 2, 73, 240, 1, 26, 0, 2, 73, 240, 4, 26, 0, 1, 148,
+            175, 24, 248, 1, 26, 0, 1, 148, 175, 24, 248, 1, 26, 0, 2, 55, 124, 25, 5, 86, 1, 26, 0, 2, 189, 234, 25, 1, 241, 1,
+            26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2,
+            73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 66, 32, 26, 0, 6, 126, 35, 24, 118, 0, 1, 1, 25, 240, 76, 25, 43,
+            210, 0, 1, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 66, 32, 26, 0, 6, 126, 35, 24, 118, 0, 1, 1, 26, 0, 2, 66, 32, 26, 0, 6,
+            126, 35, 24, 118, 0, 1, 1, 26, 0, 37, 206, 168, 25, 113, 247, 4, 0, 26, 0, 1, 65, 187, 4, 26, 0, 2, 73, 240, 25, 19,
+            136, 0, 1, 26, 0, 2, 73, 240, 24, 32, 26, 0, 3, 2, 89, 0, 1, 1, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32,
+            26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73,
+            240, 24, 32, 26, 0, 51, 13, 167, 1, 1, 255
+        ]).unwrap();
+        let mut cost_models = Costmdls::new();
+        cost_models.insert(&Language::new_plutus_v1(), &plutus_cost_model);
+        cost_models
     }
 
     fn harden(index: u32) -> u32 {
@@ -1220,6 +1312,9 @@ mod tests {
             .max_value_size(max_val_size)
             .max_tx_size(MAX_TX_SIZE)
             .coins_per_utxo_word(&to_bignum(coins_per_utxo_word))
+            .price_mem(PRICE_MEM)
+            .price_step(PRICE_STEPS)
+            .cost_models(mock_cost_models())
             .build()
             .unwrap();
         TransactionBuilder::new(&cfg)
@@ -1259,6 +1354,9 @@ mod tests {
             .max_value_size(MAX_VALUE_SIZE)
             .max_tx_size(MAX_TX_SIZE)
             .coins_per_utxo_word(&to_bignum(1))
+            .price_mem(PRICE_MEM)
+            .price_step(PRICE_STEPS)
+            .cost_models(mock_cost_models())
             .prefer_pure_change(true)
             .build()
             .unwrap())
@@ -2675,6 +2773,9 @@ mod tests {
             .max_value_size(9999)
             .max_tx_size(9999)
             .coins_per_utxo_word(&Coin::zero())
+            .price_mem(PRICE_MEM)
+            .price_step(PRICE_STEPS)
+            .cost_models(mock_cost_models())
             .build()
             .unwrap();
         let mut tx_builder = TransactionBuilder::new(&cfg);
@@ -2702,6 +2803,9 @@ mod tests {
             .max_value_size(9999)
             .max_tx_size(9999)
             .coins_per_utxo_word(&Coin::zero())
+            .price_mem(PRICE_MEM)
+            .price_step(PRICE_STEPS)
+            .cost_models(mock_cost_models())
             .build()
             .unwrap();
         let mut tx_builder = TransactionBuilder::new(&cfg);
@@ -2934,6 +3038,9 @@ mod tests {
                 .max_value_size(max_value_size)
                 .max_tx_size(MAX_TX_SIZE)
                 .coins_per_utxo_word(&to_bignum(1))
+                .price_mem(PRICE_MEM)
+                .price_step(PRICE_STEPS)
+                .cost_models(mock_cost_models())
                 .prefer_pure_change(true)
                 .build()
                 .unwrap()
