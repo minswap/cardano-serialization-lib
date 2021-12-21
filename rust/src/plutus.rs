@@ -487,6 +487,10 @@ impl PlutusList {
         self.elems.push(elem.clone());
         self.definite_encoding = None;
     }
+
+    pub fn set_definite_encoding(&mut self, d: Option<bool>) {
+        self.definite_encoding = d;
+    }
 }
 
 #[wasm_bindgen]
@@ -588,6 +592,18 @@ impl Redeemers {
 
     pub fn add(&mut self, elem: &Redeemer) {
         self.0.push(elem.clone());
+    }
+}
+
+impl Redeemers {
+    pub fn tot_ex_units(&self) -> Result<ExUnits,JsError> {
+        let mut mem = BigNum::from_str("0")?;
+        let mut step = BigNum::from_str("0")?;
+        for redeemer in &self.0 {
+            mem = mem.checked_add(&redeemer.ex_units().mem())?;
+            step = step.checked_add(&redeemer.ex_units().steps())?;
+        }
+        Ok(ExUnits::new(&mem, &step))
     }
 }
 

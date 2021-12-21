@@ -1,20 +1,20 @@
 name: PR Checks
 
 on:
-  pull_request_review:
-    types: [submitted]
+  pull_request:
+    branches:
+      - minswap
 
 jobs:
   test-and-build:
-    if: github.event.review && (github.event.review.state == 'approved' || contains(github.event.review.body, '/check'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: "recursive"
       - uses: actions/setup-node@v1
         with:
-          node-version: '12.18.1'
+          node-version: "12.18.1"
       - name: Cache node modules
         uses: actions/cache@v1
         with:
@@ -42,15 +42,14 @@ jobs:
         run: |
           npm run rust:build-browser
   check-warns:
-    if: github.event.review && (github.event.review.state == 'approved' || contains(github.event.review.body, '/check'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: "recursive"
       - uses: actions/setup-node@v1
         with:
-          node-version: '12.18.1'
+          node-version: "12.18.1"
       - name: Cache node modules
         uses: actions/cache@v1
         with:

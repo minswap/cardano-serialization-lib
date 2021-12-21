@@ -2169,11 +2169,11 @@ mod tests {
         ]).unwrap();
         let mut cost_models = Costmdls::new();
         cost_models.insert(&Language::new_plutus_v1(), &plutus_cost_model);
-        let script_data_hash = hash_script_data(&redeemers, &cost_models, Some(datums));
+        let script_data_hash = hash_script_data(Some(redeemers), &cost_models, Some(datums));
 
         assert_eq!(
-            hex::encode(script_data_hash.to_bytes()),
-            "4415e6667e6d6bbd992af5092d48e3c2ba9825200d0234d2470068f7f0f178b3"
+            hex::encode(script_data_hash.unwrap().to_bytes()),
+            "57240d358f8ab6128c4a66340271e4fec39b4971232add308f01a5809313adcf"
         );
     }
 
