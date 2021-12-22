@@ -177,7 +177,7 @@ pub struct TransactionBuilderConfig {
     coins_per_utxo_word: Coin, // protocol parameter
     price_mem: f64,
     price_step: f64,
-    cost_models: Costmdls,
+    language_views: LanguageViews,
     prefer_pure_change: bool,
 }
 
@@ -192,7 +192,7 @@ pub struct TransactionBuilderConfigBuilder {
     coins_per_utxo_word: Option<Coin>, // protocol parameter
     price_mem: Option<f64>,
     price_step: Option<f64>,
-    cost_models: Option<Costmdls>,
+    language_views: Option<LanguageViews>,
     prefer_pure_change: bool,
 }
 
@@ -208,7 +208,7 @@ impl TransactionBuilderConfigBuilder {
             coins_per_utxo_word: None,
             price_mem: None,
             price_step: None,
-            cost_models: None,
+            language_views: None,
             prefer_pure_change: false,
         }
     }
@@ -261,9 +261,9 @@ impl TransactionBuilderConfigBuilder {
         cfg
     }
 
-    pub fn cost_models(&self, cost_models: Costmdls) -> Self {
+    pub fn language_views(&self, language_views: LanguageViews) -> Self {
         let mut cfg = self.clone();
-        cfg.cost_models = Some(cost_models);
+        cfg.language_views = Some(language_views);
         cfg
     }
 
@@ -284,7 +284,7 @@ impl TransactionBuilderConfigBuilder {
             coins_per_utxo_word: cfg.coins_per_utxo_word.ok_or(JsError::from_str("uninitialized field: coins_per_utxo_word"))?,
             price_mem: cfg.price_mem.ok_or(JsError::from_str("uninitialized field: price_mem"))?,
             price_step: cfg.price_step.ok_or(JsError::from_str("uninitialized field: price_step"))?,
-            cost_models: cfg.cost_models.ok_or(JsError::from_str("uninitialized field: cost_models"))?,
+            language_views: cfg.language_views.ok_or(JsError::from_str("uninitialized field: language_views"))?,
             prefer_pure_change: cfg.prefer_pure_change,
         })
     }
@@ -1151,7 +1151,7 @@ impl TransactionBuilder {
             // TODO: update for use with Alonzo
             script_data_hash: match &self.redeemers {
                 None => None,
-                Some(_) => Some(utils::hash_script_data(&self.redeemers.clone().unwrap(), &self.config.cost_models.clone(), self.plutus_data.clone())),
+                Some(_) => Some(utils::hash_script_data(&self.redeemers.clone().unwrap(), &self.config.language_views.clone(), self.plutus_data.clone())),
             },
             collateral: self.collateral.clone(),
             required_signers: self.required_signers.clone(),
@@ -1245,28 +1245,8 @@ mod tests {
         ).unwrap()
     }
 
-    fn mock_cost_models() -> Costmdls {
-        let plutus_cost_model = CostModel::from_bytes(vec![
-            159, 26, 0, 3, 2, 89, 0, 1, 1, 26, 0, 6, 11, 199, 25, 2, 109, 0, 1, 26, 0, 2, 73, 240, 25, 3, 232, 0, 1, 26, 0,
-            2, 73, 240, 24, 32, 26, 0, 37, 206, 168, 25, 113, 247, 4, 25, 116, 77, 24, 100, 25, 116, 77, 24, 100, 25, 116, 77,
-            24, 100, 25, 116, 77, 24, 100, 25, 116, 77, 24, 100, 25, 116, 77, 24, 100, 24, 100, 24, 100, 25, 116, 77, 24, 100,
-            26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 25, 3, 232, 0,
-            1, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 25, 3, 232, 0, 8, 26, 0, 2, 66, 32, 26, 0, 6, 126, 35, 24, 118, 0,
-            1, 1, 26, 0, 2, 73, 240, 25, 3, 232, 0, 8, 26, 0, 2, 73, 240, 26, 0, 1, 183, 152, 24, 247, 1, 26, 0, 2, 73, 240, 25,
-            39, 16, 1, 26, 0, 2, 21, 94, 25, 5, 46, 1, 25, 3, 232, 26, 0, 2, 73, 240, 25, 3, 232, 1, 26, 0, 2, 73, 240, 24, 32,
-            26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 1, 1, 26, 0, 2, 73, 240, 1, 26, 0, 2, 73, 240, 4, 26, 0, 1, 148,
-            175, 24, 248, 1, 26, 0, 1, 148, 175, 24, 248, 1, 26, 0, 2, 55, 124, 25, 5, 86, 1, 26, 0, 2, 189, 234, 25, 1, 241, 1,
-            26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2,
-            73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 66, 32, 26, 0, 6, 126, 35, 24, 118, 0, 1, 1, 25, 240, 76, 25, 43,
-            210, 0, 1, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 66, 32, 26, 0, 6, 126, 35, 24, 118, 0, 1, 1, 26, 0, 2, 66, 32, 26, 0, 6,
-            126, 35, 24, 118, 0, 1, 1, 26, 0, 37, 206, 168, 25, 113, 247, 4, 0, 26, 0, 1, 65, 187, 4, 26, 0, 2, 73, 240, 25, 19,
-            136, 0, 1, 26, 0, 2, 73, 240, 24, 32, 26, 0, 3, 2, 89, 0, 1, 1, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32,
-            26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73, 240, 24, 32, 26, 0, 2, 73,
-            240, 24, 32, 26, 0, 51, 13, 167, 1, 1, 255
-        ]).unwrap();
-        let mut cost_models = Costmdls::new();
-        cost_models.insert(&Language::new_plutus_v1(), &plutus_cost_model);
-        cost_models
+    fn mock_language_views() -> LanguageViews {
+        LanguageViews::new(hex::decode("a141005901d59f1a000302590001011a00060bc719026d00011a000249f01903e800011a000249f018201a0025cea81971f70419744d186419744d186419744d186419744d186419744d186419744d18641864186419744d18641a000249f018201a000249f018201a000249f018201a000249f01903e800011a000249f018201a000249f01903e800081a000242201a00067e2318760001011a000249f01903e800081a000249f01a0001b79818f7011a000249f0192710011a0002155e19052e011903e81a000249f01903e8011a000249f018201a000249f018201a000249f0182001011a000249f0011a000249f0041a000194af18f8011a000194af18f8011a0002377c190556011a0002bdea1901f1011a000249f018201a000249f018201a000249f018201a000249f018201a000249f018201a000249f018201a000242201a00067e23187600010119f04c192bd200011a000249f018201a000242201a00067e2318760001011a000242201a00067e2318760001011a0025cea81971f704001a000141bb041a000249f019138800011a000249f018201a000302590001011a000249f018201a000249f018201a000249f018201a000249f018201a000249f018201a000249f018201a000249f018201a00330da70101ff").unwrap())
     }
 
     fn harden(index: u32) -> u32 {
@@ -1314,7 +1294,7 @@ mod tests {
             .coins_per_utxo_word(&to_bignum(coins_per_utxo_word))
             .price_mem(PRICE_MEM)
             .price_step(PRICE_STEPS)
-            .cost_models(mock_cost_models())
+            .language_views(mock_language_views())
             .build()
             .unwrap();
         TransactionBuilder::new(&cfg)
@@ -1356,7 +1336,7 @@ mod tests {
             .coins_per_utxo_word(&to_bignum(1))
             .price_mem(PRICE_MEM)
             .price_step(PRICE_STEPS)
-            .cost_models(mock_cost_models())
+            .language_views(mock_language_views())
             .prefer_pure_change(true)
             .build()
             .unwrap())
@@ -2775,7 +2755,7 @@ mod tests {
             .coins_per_utxo_word(&Coin::zero())
             .price_mem(PRICE_MEM)
             .price_step(PRICE_STEPS)
-            .cost_models(mock_cost_models())
+            .language_views(mock_language_views())
             .build()
             .unwrap();
         let mut tx_builder = TransactionBuilder::new(&cfg);
@@ -2805,7 +2785,7 @@ mod tests {
             .coins_per_utxo_word(&Coin::zero())
             .price_mem(PRICE_MEM)
             .price_step(PRICE_STEPS)
-            .cost_models(mock_cost_models())
+            .language_views(mock_language_views())
             .build()
             .unwrap();
         let mut tx_builder = TransactionBuilder::new(&cfg);
@@ -3040,7 +3020,7 @@ mod tests {
                 .coins_per_utxo_word(&to_bignum(1))
                 .price_mem(PRICE_MEM)
                 .price_step(PRICE_STEPS)
-                .cost_models(mock_cost_models())
+                .language_views(mock_language_views())
                 .prefer_pure_change(true)
                 .build()
                 .unwrap()

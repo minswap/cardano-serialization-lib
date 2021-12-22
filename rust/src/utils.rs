@@ -896,7 +896,7 @@ pub fn hash_plutus_data(plutus_data: &PlutusData) -> DataHash {
     DataHash::from(blake2b256(&plutus_data.to_bytes()))
 }
 #[wasm_bindgen]
-pub fn hash_script_data(redeemers: &Redeemers, cost_models: &Costmdls, datums: Option<PlutusList>) -> ScriptDataHash {
+pub fn hash_script_data(redeemers: &Redeemers, language_views: &LanguageViews, datums: Option<PlutusList>) -> ScriptDataHash {
     /*
     ; script data format:
     ; [ redeemers | datums | language views ]
@@ -909,7 +909,7 @@ pub fn hash_script_data(redeemers: &Redeemers, cost_models: &Costmdls, datums: O
     if let Some(d) = &datums {
         buf.extend(d.to_bytes());
     }
-    buf.extend(cost_models.language_views_encoding());
+    buf.extend(language_views.bytes());
     ScriptDataHash::from(blake2b256(&buf))
 }
 
@@ -2165,7 +2165,7 @@ mod tests {
         ]).unwrap();
         let mut cost_models = Costmdls::new();
         cost_models.insert(&Language::new_plutus_v1(), &plutus_cost_model);
-        let script_data_hash = hash_script_data(&redeemers, &cost_models, Some(datums));
+        let script_data_hash = hash_script_data(&redeemers, &LanguageViews::new(cost_models.language_views_encoding()), Some(datums));
 
         assert_eq!(
             hex::encode(script_data_hash.to_bytes()),
