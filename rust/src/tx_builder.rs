@@ -1148,11 +1148,7 @@ impl TransactionBuilder {
             },
             validity_start_interval: self.validity_start_interval,
             mint: self.mint.clone(),
-            // TODO: update for use with Alonzo
-            script_data_hash: match &self.redeemers {
-                None => None,
-                Some(_) => Some(utils::hash_script_data(&self.redeemers.clone().unwrap(), &self.config.language_views.clone(), self.plutus_data.clone())),
-            },
+            script_data_hash: utils::hash_script_data(self.redeemers.clone(), &self.config.cost_models.clone(), self.plutus_data.clone()),
             collateral: self.collateral.clone(),
             required_signers: self.required_signers.clone(),
             network_id: None,
