@@ -137,8 +137,6 @@ fn min_fee(tx_builder: &TransactionBuilder) -> Result<Coin, JsError> {
                     return Err(JsError::from_str(&format!("No witness script is found for mint policy '{:?}'! Impossible to estimate fee", hex::encode(mint_hash.to_bytes()))));
                 }
             }
-        } else {
-            return Err(JsError::from_str("Impossible to estimate fee if mint is present in the builder, but witness scripts are not provided!"));
         }
     }
     let full_tx = fake_full_tx(tx_builder, tx_builder.build()?)?;
