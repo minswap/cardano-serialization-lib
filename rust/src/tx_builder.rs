@@ -321,7 +321,11 @@ impl TransactionBuilder {
     /// This function, diverging from CIP2, takes into account fees and will attempt to add additional
     /// inputs to cover the minimum fees. This does not, however, set the txbuilder's fee.
     pub fn add_inputs_from(&mut self, inputs: &TransactionUnspentOutputs, strategy: CoinSelectionStrategyCIP2) -> Result<(), JsError> {
-        let mut available_inputs = inputs.0.clone();
+        let mut available_inputs: Vec<TransactionUnspentOutput> = inputs.0
+            .clone()
+            .into_iter()
+            .filter(|a| !self.inputs.iter().any(|b| b.input == a.input))
+            .collect();
         let mut input_total = self.get_total_input()?;
         let mut output_total = self
             .get_explicit_output()?
@@ -2820,6 +2824,38 @@ mod tests {
         let change_addr = ByronAddress::from_base58("Ae2tdPwUPEZGUEsuMAhvDcy94LKsZxDjCbgaiBBMgYpR8sKf96xJmit7Eho").unwrap().to_address();
         let add_change_res = tx_builder.add_change_if_needed(&change_addr);
         assert!(add_change_res.is_ok(), "{:?}", add_change_res.err());
+    }
+
+    #[test]
+    fn add_inputs_from_filter_exist_inputs() {
+        let mut tx_builder = create_tx_builder_with_fee(&create_linear_fee(0, 0));
+        tx_builder.add_output(&TransactionOutput::new(
+            &Address::from_bech32("addr1vyy6nhfyks7wdu3dudslys37v252w2nwhv0fw2nfawemmnqs6l44z").unwrap(),
+            &Value::new(&to_bignum(1200))
+        )).unwrap();
+        let utxo1 = TransactionUnspentOutput::new(
+            &TransactionInput::new(&TransactionHash::from([0u8; 32]), 0),
+            &TransactionOutput::new(
+                &Address::from_bech32("addr1vyy6nhfyks7wdu3dudslys37v252w2nwhv0fw2nfawemmnqs6l44z").unwrap(),
+                &Value::new(&to_bignum(1500)),
+            ),
+        );
+        let utxo2 = TransactionUnspentOutput::new(
+            &TransactionInput::new(&TransactionHash::from([1u8; 32]), 0),
+            &TransactionOutput::new(
+                &Address::from_bech32("addr1vyy6nhfyks7wdu3dudslys37v252w2nwhv0fw2nfawemmnqs6l44z").unwrap(),
+                &Value::new(&to_bignum(1500)),
+            ),
+        );
+        tx_builder.add_input(&utxo1.output.address, &utxo1.input, &utxo1.output.amount);
+        let mut available_inputs = TransactionUnspentOutputs::new();
+        available_inputs.add(&utxo1);
+        available_inputs.add(&utxo2);
+        tx_builder.add_inputs_from(&available_inputs, CoinSelectionStrategyCIP2::LargestFirst).unwrap();
+        assert_eq!(
+            1, 
+            tx_builder.inputs.iter().filter(|a| a.input == utxo1.input).count(),
+        );
     }
 
     #[test]
