@@ -2188,7 +2188,7 @@ mod tests {
         ]).unwrap();
         let mut cost_models = Costmdls::new();
         cost_models.insert(&Language::new_plutus_v1(), &plutus_cost_model);
-        let script_data_hash = hash_script_data(&redeemers, &LanguageViews::new(cost_models.language_views_encoding()), Some(datums));
+        let script_data_hash = hash_script_data(Some(redeemers), &cost_models, Some(datums));
 
         assert_eq!(
             hex::encode(script_data_hash.unwrap().to_bytes()),
