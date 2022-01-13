@@ -896,21 +896,44 @@ pub fn hash_plutus_data(plutus_data: &PlutusData) -> DataHash {
     DataHash::from(blake2b256(&plutus_data.to_bytes()))
 }
 #[wasm_bindgen]
-pub fn hash_script_data(redeemers: &Redeemers, language_views: &LanguageViews, datums: Option<PlutusList>) -> ScriptDataHash {
+pub fn hash_script_data(redeemers: Option<Redeemers>, cost_models: &Costmdls, datums: Option<PlutusList>) -> Option<ScriptDataHash> {
     /*
     ; script data format:
     ; [ redeemers | datums | language views ]
     ; The redeemers are exactly the data present in the transaction witness set.
     ; Similarly for the datums, if present. If no datums are provided, the middle
     ; field is an empty string.
+
+    ; Finally, note that in the case that a transaction includes datums but does not
+    ; include any redeemers, the script data format becomes (in hex):
+    ; [ 80 | datums | A0 ]
     */
-    let mut buf = Vec::new();
-    buf.extend(redeemers.to_bytes());
-    if let Some(d) = &datums {
-        buf.extend(d.to_bytes());
+    match redeemers {
+        None =>
+            match datums {
+                None => None,
+                Some (d) => {
+                    let mut buf = Vec::new();
+                    let mut d2 = d.clone();
+                    d2.set_definite_encoding(Some(true));
+                    buf.push(0x80);
+                    buf.extend(d2.to_bytes());
+                    buf.push(0xA0);
+                    Some(ScriptDataHash::from(blake2b256(&buf)))
+                },
+            }
+        Some(rdm) => {
+            let mut buf = Vec::new();
+            buf.extend(rdm.to_bytes());
+            if let Some(d) = &datums {
+                let mut d2 = d.clone();
+                d2.set_definite_encoding(Some(true));
+                buf.extend(d2.to_bytes());
+            }
+            buf.extend(cost_models.language_views_encoding());
+            Some(ScriptDataHash::from(blake2b256(&buf)))
+        }
     }
-    buf.extend(language_views.bytes());
-    ScriptDataHash::from(blake2b256(&buf))
 }
 
 // wasm-bindgen can't accept Option without clearing memory, so we avoid exposing this in WASM
@@ -2168,8 +2191,8 @@ mod tests {
         let script_data_hash = hash_script_data(&redeemers, &LanguageViews::new(cost_models.language_views_encoding()), Some(datums));
 
         assert_eq!(
-            hex::encode(script_data_hash.to_bytes()),
-            "4415e6667e6d6bbd992af5092d48e3c2ba9825200d0234d2470068f7f0f178b3"
+            hex::encode(script_data_hash.unwrap().to_bytes()),
+            "57240d358f8ab6128c4a66340271e4fec39b4971232add308f01a5809313adcf"
         );
     }
 
