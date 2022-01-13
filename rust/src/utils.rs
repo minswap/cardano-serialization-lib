@@ -934,11 +934,6 @@ pub fn hash_script_data(redeemers: Option<Redeemers>, cost_models: &Costmdls, da
             Some(ScriptDataHash::from(blake2b256(&buf)))
         }
     }
-<<<<<<< HEAD
-    buf.extend(language_views.bytes());
-    ScriptDataHash::from(blake2b256(&buf))
-=======
->>>>>>> 26ee543 (Fix field11 (#3))
 }
 
 // wasm-bindgen can't accept Option without clearing memory, so we avoid exposing this in WASM
@@ -2193,11 +2188,7 @@ mod tests {
         ]).unwrap();
         let mut cost_models = Costmdls::new();
         cost_models.insert(&Language::new_plutus_v1(), &plutus_cost_model);
-<<<<<<< HEAD
         let script_data_hash = hash_script_data(&redeemers, &LanguageViews::new(cost_models.language_views_encoding()), Some(datums));
-=======
-        let script_data_hash = hash_script_data(Some(redeemers), &cost_models, Some(datums));
->>>>>>> 26ee543 (Fix field11 (#3))
 
         assert_eq!(
             hex::encode(script_data_hash.unwrap().to_bytes()),
