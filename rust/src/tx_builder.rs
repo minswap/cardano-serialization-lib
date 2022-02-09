@@ -363,7 +363,7 @@ impl TransactionBuilder {
     /// This function, diverging from CIP2, takes into account fees and will attempt to add additional
     /// inputs to cover the minimum fees. This does not, however, set the txbuilder's fee.
     pub fn add_inputs_from(&mut self, inputs: &TransactionUnspentOutputs, strategy: CoinSelectionStrategyCIP2) -> Result<(), JsError> {
-        let mut available_inputs: Vec<TransactionUnspentOutput> = inputs.0
+        let available_inputs: &Vec<TransactionUnspentOutput> = &inputs.0
             .clone()
             .into_iter()
             .filter(|a| !self.inputs.iter().any(|b| b.input == a.input))
@@ -1306,6 +1306,18 @@ impl TransactionBuilder {
         }
     }
 
+    fn calculate_script_data_hash(&self) -> Option<ScriptDataHash> {
+        match &self.redeemers {
+            None => {
+                match self.plutus_data {
+                    None => None,
+                    Some(_) => Some(utils::hash_script_data(&Redeemers::new(), &self.config.cost_models.clone(), self.plutus_data.clone()))
+                }
+            },
+            Some(rdm) => Some(utils::hash_script_data(&rdm, &self.config.cost_models.clone(), self.plutus_data.clone()))
+        }
+    }
+
     fn build_and_size(&self) -> Result<(TransactionBody, usize), JsError> {
         let fee = self.fee.ok_or_else(|| JsError::from_str("Fee not specified"))?;
         let built = TransactionBody {
@@ -1322,7 +1334,7 @@ impl TransactionBuilder {
             },
             validity_start_interval: self.validity_start_interval,
             mint: self.mint.clone(),
-            script_data_hash: utils::hash_script_data(self.redeemers.clone(), &self.config.cost_models.clone(), self.plutus_data.clone()),
+            script_data_hash: self.calculate_script_data_hash(),
             collateral: self.collateral.clone(),
             required_signers: self.required_signers.clone(),
             network_id: None,
