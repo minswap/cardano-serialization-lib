@@ -908,7 +908,9 @@ pub fn hash_script_data(redeemers: &Redeemers, cost_models: &Costmdls, datums: O
         */
         buf.push(0x80);
         if let Some(d) = &datums {
-            buf.extend(d.to_bytes());
+            let mut d2 = d.clone();
+            d2.set_definite_encoding(Some(true));
+            buf.extend(d2.to_bytes());
         }
         buf.push(0xA0);
     } else {
@@ -921,7 +923,9 @@ pub fn hash_script_data(redeemers: &Redeemers, cost_models: &Costmdls, datums: O
         */
         buf.extend(redeemers.to_bytes());
         if let Some(d) = &datums {
-            buf.extend(d.to_bytes());
+            let mut d2 = d.clone();
+            d2.set_definite_encoding(Some(true));
+            buf.extend(d2.to_bytes());
         }
         buf.extend(cost_models.language_views_encoding());
     }
@@ -2173,7 +2177,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(script_data_hash.to_bytes()),
-            "4415e6667e6d6bbd992af5092d48e3c2ba9825200d0234d2470068f7f0f178b3"
+            "57240d358f8ab6128c4a66340271e4fec39b4971232add308f01a5809313adcf"
         );
     }
 
