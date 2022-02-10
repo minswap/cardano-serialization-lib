@@ -853,7 +853,8 @@ impl TransactionBuilder {
     /// it will replace any previously existing mint and mint scripts
     /// NOTE! Error will be returned in case a mint policy does not have a matching script
     pub fn set_mint(&mut self, mint: &Mint, mint_scripts: &NativeScripts) -> Result<(), JsError> {
-        assert_required_mint_scripts(mint, Some(mint_scripts))?;
+        // The line below conflict with Plutus scripts so we comment it
+        // assert_required_mint_scripts(mint, Some(mint_scripts))?;
         self.mint = Some(mint.clone());
         self.mint_scripts = Some(mint_scripts.clone());
         Ok(())
