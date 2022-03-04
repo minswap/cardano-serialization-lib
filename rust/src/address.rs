@@ -469,6 +469,26 @@ impl Address {
             AddrType::Byron(a) => a.network_id(),
         }
     }
+
+    pub fn to_keyhash(&self) -> Option<Ed25519KeyHash> {
+        match &self.0 {
+            AddrType::Base(a) => a.payment_cred().to_keyhash(),
+            AddrType::Enterprise(a) => a.payment_cred().to_keyhash(),
+            AddrType::Ptr(a) => a.payment_cred().to_keyhash(),
+            AddrType::Reward(a) => a.payment_cred().to_keyhash(),
+            AddrType::Byron(_) => panic!("Don't know how to get keyHash from Byron address"),
+        }
+    }
+
+    pub fn to_scripthash(&self) -> Option<ScriptHash> {
+        match &self.0 {
+            AddrType::Base(a) => a.payment_cred().to_scripthash(),
+            AddrType::Enterprise(a) => a.payment_cred().to_scripthash(),
+            AddrType::Ptr(a) => a.payment_cred().to_scripthash(),
+            AddrType::Reward(a) => a.payment_cred().to_scripthash(),
+            AddrType::Byron(_) => panic!("Don't know how to get scriptHash from Byron address"),
+        }
+    }
 }
 
 impl cbor_event::se::Serialize for Address {

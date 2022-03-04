@@ -775,8 +775,16 @@ impl TransactionBuilder {
         };
     }
 
-    pub fn set_collateral(&mut self, collateral: &TransactionInputs) {
-        self.collateral = Some(collateral.clone())
+    pub fn set_collateral(&mut self, collaterals: &TransactionUnspentOutputs) {
+        let mut inputs = TransactionInputs::new();
+        for utxo in &collaterals.0 {
+            inputs.add(&utxo.input.clone());
+            match utxo.output().address().to_keyhash() {
+                Some(pkh) => self.input_types.vkeys.insert(pkh),
+                None => panic!("collateral must be vkey address"),
+            };
+        }
+        self.collateral = Some(inputs)
     }
 
     pub fn set_plutus_data(&mut self, plutus_data: &PlutusList) {
