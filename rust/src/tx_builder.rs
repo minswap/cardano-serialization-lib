@@ -638,6 +638,10 @@ impl TransactionBuilder {
     }
 
     pub fn add_input(&mut self, address: &Address, input: &TransactionInput, amount: &Value) {
+        // ignore existing input
+        if self.inputs.iter().any(|x| x.input == *input) {
+            return
+        }
         match &BaseAddress::from_address(address) {
             Some(addr) => {
                 match &addr.payment_cred().to_keyhash() {
@@ -1953,7 +1957,7 @@ mod tests {
                 &spend_cred,
                 &stake_cred
             ).to_address(),
-            &TransactionInput::new(&genesis_id(), 0),
+            &TransactionInput::new(&genesis_id(), 1),
             &Value::new(&to_bignum(1_000_000))
         );
         tx_builder.add_input(
@@ -1966,14 +1970,14 @@ mod tests {
                     0
                 )
             ).to_address(),
-            &TransactionInput::new(&genesis_id(), 0),
+            &TransactionInput::new(&genesis_id(), 2),
             &Value::new(&to_bignum(1_000_000))
         );
         tx_builder.add_input(
             &ByronAddress::icarus_from_key(
                 &spend, NetworkInfo::testnet().protocol_magic()
             ).to_address(),
-            &TransactionInput::new(&genesis_id(), 0),
+            &TransactionInput::new(&genesis_id(), 3),
             &Value::new(&to_bignum(1_000_000))
         );
 
