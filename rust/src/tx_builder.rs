@@ -431,6 +431,9 @@ impl TransactionBuilder {
                         }
                     }
                 }
+                // add minimum ADA to output_total
+                let min_ada = min_ada_required(&output_total, false, &self.config.coins_per_utxo_word).unwrap();
+                output_total.set_coin(&output_total.coin.checked_add(&min_ada).unwrap());
                 // add in remaining ADA
                 self.cip2_largest_first_by(
                     available_inputs,
