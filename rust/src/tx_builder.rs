@@ -432,7 +432,7 @@ impl TransactionBuilder {
                     }
                 }
                 // add minimum ADA to output_total
-                let min_ada = min_ada_required(&output_total, false, &self.config.coins_per_utxo_word).unwrap();
+                let min_ada = min_ada_required(&input_total, false, &self.config.coins_per_utxo_word).unwrap();
                 output_total.set_coin(&output_total.coin.checked_add(&min_ada).unwrap());
                 // add in remaining ADA
                 self.cip2_largest_first_by(
@@ -3093,6 +3093,43 @@ mod tests {
             .unwrap();
         let expected_change = expected_input.checked_sub(&output_value).unwrap();
         assert_eq!(expected_change, change);
+    }
+
+    #[test]
+    fn tx_builder_cip2_largest_first_multiasset_enough_change() {
+        let wallet_utxos = [
+            "828258203057c7846126ee4fa7b6005fe64a0b25dc453a0fc92c192158d651359806cd680082583900fc14c97c6f1007aafef87494a08e1053482b32f2d4bde6ef82c18764ffb9b60783779ee697c25fcd828fc4e041b323cfa06b340075d04e271a005b8d80",
+            "828258204464c2b9000ec16e4acfb374f00d59d83acb9e1ea0cef67f58c88fc7f656413d0082583900fc14c97c6f1007aafef87494a08e1053482b32f2d4bde6ef82c18764ffb9b60783779ee697c25fcd828fc4e041b323cfa06b340075d04e271a004c4b40",
+            "82825820a90c704a9263894d14028b7b28bbf80d6c23558c1d9c3719e9408c10dad54f710282583900fc14c97c6f1007aafef87494a08e1053482b32f2d4bde6ef82c18764ffb9b60783779ee697c25fcd828fc4e041b323cfa06b340075d04e27821a001e8480a1581c126b8676446c84a5cd6e3259223b16a2314c5676b88ae1c1f8579a8fa145744d454c44194b6b",
+            "82825820dc00c778f9d5ae22b4fbafb978e00e33179aff2443b8078ca40cf4dec3bf43400182583900fc14c97c6f1007aafef87494a08e1053482b32f2d4bde6ef82c18764ffb9b60783779ee697c25fcd828fc4e041b323cfa06b340075d04e27821a0055eb82a1581ce4214b7cce62ac6fbba385d164df48e157eae5863521b4b67ca71d86a1582086e90c911f058c3ebeb95a120eedd311caff3bb49d5b29ff8a9bad42005b041f19e26b",
+            "82825820eb714920e1596d3a5c3ec44fd953ddc4693aa97b773597eb3eaab415acf13da00082583900fc14c97c6f1007aafef87494a08e1053482b32f2d4bde6ef82c18764ffb9b60783779ee697c25fcd828fc4e041b323cfa06b340075d04e271a006acfc0",
+            "82825820f09daef374b392b0299e3f9fb263649922cfe6b060ac69c2c50b70da31d45b0f0282583900fc14c97c6f1007aafef87494a08e1053482b32f2d4bde6ef82c18764ffb9b60783779ee697c25fcd828fc4e041b323cfa06b340075d04e27821a00448fb6a1581c29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6a1444d494e741895",
+            "82825820f4c50f6f13d1a29926fb1214dcf1dfd5c681d7f6a0aa3ac548d7d286cd0260210182583900fc14c97c6f1007aafef87494a08e1053482b32f2d4bde6ef82c18764ffb9b60783779ee697c25fcd828fc4e041b323cfa06b340075d04e27821a005b5ec9aa581c126b8676446c84a5cd6e3259223b16a2314c5676b88ae1c1f8579a8fa743744c511a087cd69344744d494e1a08f5310345744144415819414c45744d454c441a007e5fd945744d5251521a003d9eca4574534f554c1a00093955477453554e4441451a00874c31581c22c3b86a5b88a78b5de52f4aed2831d1483b3b7681f1ee2569538130a35820016dee4ce565a31af501894406ec61d78a87f0c53de1e7cc6d52d156b3f5b1551a085cefe45820b3b9df82d3439dcb6bbda8b99a588ecd9b512c2b11f852623b0e298d3f5e27781a007888665820cb6de817be83e93a5771e6c98ee305e1012bae70d9eb9dff70e2d71e4b6117791a00468412581c29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6a1444d494e741890581c80820206c19748b9be38bce63a9e0ac39847298b11303b65c09ce241a15820e746583c16cb254ebea794d511744e64ea331dda1bae586a23c6a0b66cd4d1331a00539360581c8b75240f9ef16ee4bff929fe573998f9b411bc194edf8d8717149050a14544494144411a009402a0581cab49c4983ea2cfd43dcc32279c5ef045bb39d331309f7f0e98da939aa1477453554e4441451a00030d40581ce0baa1f0887a766daf5196f92c88728e356e71255c5ad00866607484a358203237a9f3e20482c46cd3ecbb164a3e5822c4fb6de1c1cdc0ad035a058fce49651a00246e025820c5204f5730a2cc9f3396d3e96a71e55af9fc69c24ed770d27e12ce0bf5817ba31a002d01bf5820ddffc454bffabb43e4a7a6404c7e3c19fe8f652f76552d25edace65c1414f936194a7f581ce36637817aea0502e3ef0cf34707e467e46a29c4c3eb3b7984c3575ca358202f42544a664738514236722b2b4853556f493451553067724d764c55766562760158204f35786a364336466751424951636a466e5a2f326d423331504b712b6555303801582078356c672b4e6654626268396e61736e6935427233766479625076506843416601581cebe691a343665487dbca5d1853cfb798b68e5ab3e1f699240e2cf999a15820ebbc3613f381ef88e9d477f78403b6bb4b5ba1303c88841a271395c2b8ddf3131a008ed3d4581cfc3ef8db4a16c1959fbabfcbc3fb7669bf315967ffef260ececc47a3a144534849421b00000003c72b0b13"
+        ];
+        // we have a = 0 so we know adding inputs/outputs doesn't change the fee so we can analyze more
+        let mut tx_builder = create_reallistic_tx_builder();
+        let pid1 = PolicyID::from_bytes(hex::decode("29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6").unwrap()).unwrap();
+        let asset_name1 = AssetName::new(hex::decode("4d494e74").unwrap()).unwrap();
+
+        let mut output_value = Value::new(&to_bignum(8878270));
+        let mut output_ma = MultiAsset::new();
+        output_ma.set_asset(&pid1, &asset_name1, to_bignum(288));
+        output_value.set_multiasset(&output_ma);
+        tx_builder.add_output(&TransactionOutput::new(
+            &Address::from_bech32("addr_test1wzn9efv2f6w82hagxqtn62ju4m293tqvw0uhmdl64ch8uwc5lpd8w").unwrap(),
+            &output_value
+        )).unwrap();
+
+        let mut available_inputs = TransactionUnspentOutputs::new();
+        for utxo in wallet_utxos {
+            available_inputs.add(&TransactionUnspentOutput::from_bytes(hex::decode(utxo).unwrap()).unwrap());
+        }
+
+        tx_builder.add_inputs_from(&available_inputs, CoinSelectionStrategyCIP2::LargestFirstMultiAsset).unwrap();
+        let change_addr = Address::from_bech32("addr_test1qr7pfjtudugq02h7lp6ffgywzpf5s2ej7t2tmeh0stqcwe8lhxmq0qmhnmnf0sjlekpgl38qgxej8naqdv6qqawsfcns9wpqw5").unwrap();
+        let change_added = tx_builder.add_change_if_needed(&change_addr).unwrap();
+        assert!(change_added);
+        let tx = tx_builder.build().unwrap();
     }
 
     #[test]
