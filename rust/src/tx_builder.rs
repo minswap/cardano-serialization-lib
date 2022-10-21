@@ -1081,6 +1081,12 @@ impl TransactionBuilder {
         self.redeemers = Some(redeemers.clone())
     }
 
+    pub fn index_of_input(&self, input: &TransactionInput) -> usize {
+        let mut inputs = self.inputs.inputs();
+        inputs.0.sort();
+        inputs.0.iter().position(|i| i == input).unwrap()
+    }
+
     /// Set explicit Mint object and the required witnesses to this builder
     /// it will replace any previously existing mint and mint scripts
     /// NOTE! Error will be returned in case a mint policy does not have a matching script
