@@ -1091,7 +1091,9 @@ impl TransactionBuilder {
     /// it will replace any previously existing mint and mint scripts
     /// NOTE! Error will be returned in case a mint policy does not have a matching script
     pub fn set_mint(&mut self, mint: &Mint, mint_scripts: &NativeScripts) -> Result<(), JsError> {
-        assert_required_mint_scripts(mint, Some(mint_scripts))?;
+        if !self.minswap_mode {
+            assert_required_mint_scripts(mint, Some(mint_scripts))?;
+        }
         self.mint = Some(mint.clone());
         self.mint_scripts = Some(mint_scripts.clone());
         Ok(())
@@ -1886,7 +1888,7 @@ impl TransactionBuilder {
     /// NOTE: is_valid set to true
     /// NOTE: Will fail in case there are any script inputs added with no corresponding witness
     pub fn build_tx(&self) -> Result<Transaction, JsError> {
-        if self.count_missing_input_scripts() > 0 {
+        if self.count_missing_input_scripts() > 0 && !self.minswap_mode {
             return Err(JsError::from_str(
                 "There are some script inputs added that don't have the corresponding script provided as a witness!",
             ));
