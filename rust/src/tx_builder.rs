@@ -122,7 +122,9 @@ fn fake_full_tx(
         }
     };
     let (plutus_scripts, plutus_data, redeemers) = {
-        if let Some(s) = tx_builder.get_combined_plutus_scripts() {
+        if tx_builder.minswap_mode {
+            (tx_builder.plutus_scripts.clone(), tx_builder.plutus_data.clone(), tx_builder.redeemers.clone())
+        } else if let Some(s) = tx_builder.get_combined_plutus_scripts() {
             let (s, d, r) = s.collect();
             (Some(s), Some(d), Some(r))
         } else {
@@ -213,6 +215,7 @@ pub struct TransactionBuilderConfig {
     data_cost: DataCost,                  // protocol parameter
     ex_unit_prices: Option<ExUnitPrices>, // protocol parameter
     prefer_pure_change: bool,
+    minswap_mode: bool,
 }
 
 impl TransactionBuilderConfig {
@@ -232,6 +235,7 @@ pub struct TransactionBuilderConfigBuilder {
     data_cost: Option<DataCost>,          // protocol parameter
     ex_unit_prices: Option<ExUnitPrices>, // protocol parameter
     prefer_pure_change: bool,
+    minswap_mode: bool,
 }
 
 #[wasm_bindgen]
@@ -246,6 +250,7 @@ impl TransactionBuilderConfigBuilder {
             data_cost: None,
             ex_unit_prices: None,
             prefer_pure_change: false,
+            minswap_mode: false,
         }
     }
 
@@ -309,6 +314,12 @@ impl TransactionBuilderConfigBuilder {
         cfg
     }
 
+    pub fn minswap_mode(&self, minswap_mode: bool) -> Self {
+        let mut cfg = self.clone();
+        cfg.minswap_mode = minswap_mode;
+        cfg
+    }
+
     pub fn build(&self) -> Result<TransactionBuilderConfig, JsError> {
         let cfg: Self = self.clone();
         Ok(TransactionBuilderConfig {
@@ -332,6 +343,7 @@ impl TransactionBuilderConfigBuilder {
             ))?,
             ex_unit_prices: cfg.ex_unit_prices,
             prefer_pure_change: cfg.prefer_pure_change,
+            minswap_mode: cfg.minswap_mode,
         })
     }
 }
@@ -356,6 +368,10 @@ pub struct TransactionBuilder {
     collateral_return: Option<TransactionOutput>,
     total_collateral: Option<Coin>,
     reference_inputs: HashSet<TransactionInput>,
+    minswap_mode: bool,
+    plutus_scripts: Option<PlutusScripts>,
+    plutus_data: Option<PlutusList>,
+    redeemers: Option<Redeemers>,
 }
 
 #[wasm_bindgen]
@@ -1041,11 +1057,43 @@ impl TransactionBuilder {
         Ok(())
     }
 
+    pub fn get_plutus_scripts(&self) -> Option<PlutusScripts> {
+        self.plutus_scripts.clone()
+    }
+
+    pub fn set_plutus_scripts(&mut self, plutus_scripts: &PlutusScripts) {
+        self.plutus_scripts = Some(plutus_scripts.clone())
+    }
+
+    pub fn get_plutus_data(&self) -> Option<PlutusList> {
+        self.plutus_data.clone()
+    }
+
+    pub fn set_plutus_data(&mut self, plutus_data: &PlutusList) {
+        self.plutus_data = Some(plutus_data.clone())
+    }
+
+    pub fn get_redeemers(&self) -> Option<Redeemers> {
+        self.redeemers.clone()
+    }
+
+    pub fn set_redeemers(&mut self, redeemers: &Redeemers) {
+        self.redeemers = Some(redeemers.clone())
+    }
+
+    pub fn index_of_input(&self, input: &TransactionInput) -> usize {
+        let mut inputs = self.inputs.inputs();
+        inputs.0.sort();
+        inputs.0.iter().position(|i| i == input).unwrap()
+    }
+
     /// Set explicit Mint object and the required witnesses to this builder
     /// it will replace any previously existing mint and mint scripts
     /// NOTE! Error will be returned in case a mint policy does not have a matching script
     pub fn set_mint(&mut self, mint: &Mint, mint_scripts: &NativeScripts) -> Result<(), JsError> {
-        assert_required_mint_scripts(mint, Some(mint_scripts))?;
+        if !self.minswap_mode {
+            assert_required_mint_scripts(mint, Some(mint_scripts))?;
+        }
         self.mint = Some(mint.clone());
         self.mint_scripts = Some(mint_scripts.clone());
         Ok(())
@@ -1210,6 +1258,10 @@ impl TransactionBuilder {
             collateral_return: None,
             total_collateral: None,
             reference_inputs: HashSet::new(),
+            minswap_mode: cfg.minswap_mode,
+            plutus_scripts: None,
+            plutus_data: None,
+            redeemers: None,
         }
     }
 
@@ -1806,11 +1858,23 @@ impl TransactionBuilder {
         if let Some(scripts) = self.get_combined_native_scripts() {
             wit.set_native_scripts(&scripts);
         }
-        if let Some(pw) = self.get_combined_plutus_scripts() {
-            let (scripts, datums, redeemers) = pw.collect();
-            wit.set_plutus_scripts(&scripts);
-            wit.set_plutus_data(&datums);
-            wit.set_redeemers(&redeemers);
+        if self.minswap_mode {
+            if let Some(ref scripts) = self.plutus_scripts {
+                wit.set_plutus_scripts(&scripts);
+            }
+            if let Some(ref datums) = self.plutus_data {
+                wit.set_plutus_data(&datums);
+            }
+            if let Some(ref redeemers) = self.redeemers {
+                wit.set_redeemers(&redeemers)
+            }
+        } else {
+            if let Some(pw) = self.get_combined_plutus_scripts() {
+                let (scripts, datums, redeemers) = pw.collect();
+                wit.set_plutus_scripts(&scripts);
+                wit.set_plutus_data(&datums);
+                wit.set_redeemers(&redeemers);
+            }
         }
         wit
     }
@@ -1824,7 +1888,7 @@ impl TransactionBuilder {
     /// NOTE: is_valid set to true
     /// NOTE: Will fail in case there are any script inputs added with no corresponding witness
     pub fn build_tx(&self) -> Result<Transaction, JsError> {
-        if self.count_missing_input_scripts() > 0 {
+        if self.count_missing_input_scripts() > 0 && !self.minswap_mode {
             return Err(JsError::from_str(
                 "There are some script inputs added that don't have the corresponding script provided as a witness!",
             ));
