@@ -473,6 +473,10 @@ impl TransactionBuilder {
                         }
                     }
                 }
+                // add minimum ADA to output_total
+                let coins_per_word = self.config.data_cost.coins_per_byte().checked_mul(&to_bignum(8)).unwrap();
+                let min_ada = min_ada_required(&input_total, false, &coins_per_word).unwrap();
+                output_total.set_coin(&output_total.coin.checked_add(&min_ada).unwrap());
                 // add in remaining ADA
                 self.cip2_largest_first_by(
                     available_inputs,
