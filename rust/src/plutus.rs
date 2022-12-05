@@ -1250,14 +1250,7 @@ pub fn decode_plutus_datum_to_json_value(
             }
             (Some("list"), Value::from(elems))
         },
-        PlutusDataEnum::Integer(bigint) => (
-            Some("int"),
-            bigint
-                .as_int()
-                .as_ref()
-                .map(|int| if int.0 >= 0 { Value::from(int.0 as u64) } else { Value::from(int.0 as i64) })
-                .ok_or_else(|| JsError::from_str(&format!("Integer {} too big for our JSON support", bigint.to_str())))?
-        ),
+        PlutusDataEnum::Integer(bigint) => (Some("int"), Value::from(bigint.to_str())),
         PlutusDataEnum::Bytes(bytes) => (Some("bytes"), Value::from(match schema {
             PlutusDatumSchema::BasicConversions => {
                 // cardano-cli converts to a string only if bytes are utf8 and all characters are printable
