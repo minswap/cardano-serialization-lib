@@ -4592,14 +4592,6 @@ mod tests {
         assert_eq!(_deser_t.to_bytes(), _final_tx.to_bytes());
     }
 
-    fn build_full_tx(
-        body: &TransactionBody,
-        witness_set: &TransactionWitnessSet,
-        auxiliary_data: Option<AuxiliaryData>,
-    ) -> Transaction {
-        return Transaction::new(body, witness_set, auxiliary_data);
-    }
-
     #[test]
     fn build_tx_multisig_spend_1on1_unsigned() {
         let mut tx_builder = create_tx_builder_with_fee(&create_linear_fee(10, 2));
@@ -4790,7 +4782,7 @@ mod tests {
         ));
         witness_set.set_vkeys(&vkw);
 
-        let _final_tx = build_full_tx(&body, &witness_set, None);
+        let _final_tx = Transaction::new(&body, &witness_set);
         let _deser_t = Transaction::from_bytes(_final_tx.to_bytes()).unwrap();
         assert_eq!(_deser_t.to_bytes(), _final_tx.to_bytes());
         assert_eq!(
