@@ -143,7 +143,7 @@ impl Transaction {
     pub fn new(
         body: &TransactionBody,
         witness_set: &TransactionWitnessSet,
-        auxiliary_data: Option<AuxiliaryData>,
+        auxiliary_data: &Option<AuxiliaryData>,
     ) -> Self {
         Self {
             body: body.clone(),

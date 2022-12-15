@@ -4595,7 +4595,7 @@ mod tests {
     fn build_full_tx(
         body: &TransactionBody,
         witness_set: &TransactionWitnessSet,
-        auxiliary_data: Option<AuxiliaryData>,
+        auxiliary_data: &Option<AuxiliaryData>,
     ) -> Transaction {
         return Transaction::new(body, witness_set, auxiliary_data);
     }
@@ -4790,7 +4790,7 @@ mod tests {
         ));
         witness_set.set_vkeys(&vkw);
 
-        let _final_tx = build_full_tx(&body, &witness_set, None);
+        let _final_tx = build_full_tx(&body, &witness_set, &None);
         let _deser_t = Transaction::from_bytes(_final_tx.to_bytes()).unwrap();
         assert_eq!(_deser_t.to_bytes(), _final_tx.to_bytes());
         assert_eq!(
