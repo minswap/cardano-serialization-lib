@@ -33,30 +33,6 @@ declare export function min_script_fee(
 ): BigNum;
 
 /**
- * @param {string} password
- * @param {string} salt
- * @param {string} nonce
- * @param {string} data
- * @returns {string}
- */
-declare export function encrypt_with_password(
-  password: string,
-  salt: string,
-  nonce: string,
-  data: string
-): string;
-
-/**
- * @param {string} password
- * @param {string} data
- * @returns {string}
- */
-declare export function decrypt_with_password(
-  password: string,
-  data: string
-): string;
-
-/**
  * @param {TransactionHash} tx_body_hash
  * @param {ByronAddress} addr
  * @param {LegacyDaedalusPrivateKey} key
@@ -193,6 +169,30 @@ declare export function encode_json_str_to_native_script(
   self_xpub: string,
   schema: number
 ): NativeScript;
+
+/**
+ * @param {string} password
+ * @param {string} salt
+ * @param {string} nonce
+ * @param {string} data
+ * @returns {string}
+ */
+declare export function encrypt_with_password(
+  password: string,
+  salt: string,
+  nonce: string,
+  data: string
+): string;
+
+/**
+ * @param {string} password
+ * @param {string} data
+ * @returns {string}
+ */
+declare export function decrypt_with_password(
+  password: string,
+  data: string
+): string;
 
 /**
  * @param {Uint8Array} bytes
@@ -7400,15 +7400,18 @@ declare export class Transaction {
   set_is_valid(valid: boolean): void;
 
   /**
+   * @param {AuxiliaryData} auxiliary_data
+   */
+  set_auxiliary_data(auxiliary_data: AuxiliaryData): void;
+
+  /**
    * @param {TransactionBody} body
    * @param {TransactionWitnessSet} witness_set
-   * @param {AuxiliaryData | void} auxiliary_data
    * @returns {Transaction}
    */
   static new(
     body: TransactionBody,
-    witness_set: TransactionWitnessSet,
-    auxiliary_data?: AuxiliaryData
+    witness_set: TransactionWitnessSet
   ): Transaction;
 }
 /**
@@ -8034,6 +8037,42 @@ declare export class TransactionBuilder {
   ): void;
 
   /**
+   * @returns {PlutusScripts | void}
+   */
+  get_plutus_scripts(): PlutusScripts | void;
+
+  /**
+   * @param {PlutusScripts} plutus_scripts
+   */
+  set_plutus_scripts(plutus_scripts: PlutusScripts): void;
+
+  /**
+   * @returns {PlutusList | void}
+   */
+  get_plutus_data(): PlutusList | void;
+
+  /**
+   * @param {PlutusList} plutus_data
+   */
+  set_plutus_data(plutus_data: PlutusList): void;
+
+  /**
+   * @returns {Redeemers | void}
+   */
+  get_redeemers(): Redeemers | void;
+
+  /**
+   * @param {Redeemers} redeemers
+   */
+  set_redeemers(redeemers: Redeemers): void;
+
+  /**
+   * @param {TransactionInput} input
+   * @returns {number}
+   */
+  index_of_input(input: TransactionInput): number;
+
+  /**
    * Set explicit Mint object and the required witnesses to this builder
    * it will replace any previously existing mint and mint scripts
    * NOTE! Error will be returned in case a mint policy does not have a matching script
@@ -8325,6 +8364,12 @@ declare export class TransactionBuilderConfigBuilder {
   prefer_pure_change(
     prefer_pure_change: boolean
   ): TransactionBuilderConfigBuilder;
+
+  /**
+   * @param {boolean} minswap_mode
+   * @returns {TransactionBuilderConfigBuilder}
+   */
+  minswap_mode(minswap_mode: boolean): TransactionBuilderConfigBuilder;
 
   /**
    * @returns {TransactionBuilderConfig}
