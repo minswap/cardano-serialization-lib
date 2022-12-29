@@ -66,6 +66,31 @@ pub struct PlutusWitness {
     redeemer: Redeemer,
 }
 
+// to_from_bytes!(PlutusWitness);
+
+impl cbor_event::se::Serialize for PlutusWitness {
+    fn serialize<'se, W: Write>(
+        &self,
+        serializer: &'se mut Serializer<W>,
+    ) -> cbor_event::Result<&'se mut Serializer<W>> {
+        serializer.write_array(cbor_event::Len::Len(3))?;
+        match &self.script {
+            PlutusScriptSourceEnum::Script(s) => s.serialize(serializer)?,
+            PlutusScriptSourceEnum::RefInput(t, s) => {
+                serializer.write_array(cbor_event::Len::Len(2))?;
+                t.serialize(serializer)?;
+                s.serialize(serializer)?
+            },
+        };
+        match &self.datum {
+            DatumSourceEnum::Datum(d) => d.serialize(serializer)?,
+            DatumSourceEnum::RefInput(r) => r.serialize(serializer)?,
+        };
+        self.redeemer.serialize(serializer)?;
+        Ok(serializer)
+    }
+}
+
 #[wasm_bindgen]
 impl PlutusWitness {
     pub fn new(script: &PlutusScript, datum: &PlutusData, redeemer: &Redeemer) -> Self {
@@ -170,6 +195,43 @@ pub struct MockWitnessSet {
     bootstraps: BTreeSet<Vec<u8>>,
 }
 
+// impl cbor_event::se::Serialize for MockWitnessSetScripts {
+//     fn serialize<'se, W: Write>(
+//         &self,
+//         serializer: &'se mut Serializer<W>,
+//     ) -> cbor_event::Result<&'se mut Serializer<W>> {
+//         serializer.write_map(cbor_event::Len::Len(self.0.len() as u64))?;
+//         for (key, value) in &self.0 {
+//             key.serialize(serializer)?;
+//             if let v = value.unwrap() {
+//                 v.serialize(serializer)?;
+//             }
+//         }
+//         Ok(serializer)
+//     }
+// }
+
+impl cbor_event::se::Serialize for MockWitnessSet {
+    fn serialize<'se, W: Write>(
+        &self,
+        serializer: &'se mut Serializer<W>,
+    ) -> cbor_event::Result<&'se mut Serializer<W>> {
+        serializer.write_array(cbor_event::Len::Len(3))?;
+        serializer.write_map(cbor_event::Len::Len(self.scripts.len() as u64))?;
+        for (key, value) in &self.scripts {
+            key.serialize(serializer)?;
+
+            if let Some(v) = value {
+                match v {
+                    ScriptWitnessType::NativeScriptWitness(nw) => nw.serialize(serializer)?,
+                    ScriptWitnessType::PlutusScriptWitness(pw) => pw.serialize(serializer)?,
+                };
+            };
+        }
+        Ok(serializer)
+    }
+}
+
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
 pub struct TxInputsBuilder {
@@ -180,6 +242,8 @@ pub struct TxInputsBuilder {
 pub(crate) fn get_bootstraps(inputs: &TxInputsBuilder) -> BTreeSet<Vec<u8>> {
     inputs.input_types.bootstraps.clone()
 }
+
+// to_from_bytes!(TxInputsBuilder);
 
 #[wasm_bindgen]
 impl TxInputsBuilder {
@@ -508,3 +572,13 @@ impl From<&TxInputsBuilder> for RequiredSignersSet {
         set
     }
 }
+
+// impl cbor_event::se::Serialize for TxInputsBuilder {
+//     fn serialize<'se, W: Write>(
+//         &self,
+//         serializer: &'se mut Serializer<W>,
+//     ) -> cbor_event::Result<&'se mut Serializer<W>> {
+//         serializer.write_array(cbor_event::Len::Len(2))?;
+//         Ok(serializer)
+//     }
+// }
