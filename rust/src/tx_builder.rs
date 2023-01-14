@@ -1091,6 +1091,10 @@ impl TransactionBuilder {
         inputs.0.iter().position(|i| i == input).unwrap()
     }
 
+    pub fn get_inputs(&self) -> TransactionInputs {
+        self.inputs.inputs().clone()
+    }
+
     /// Set explicit Mint object and the required witnesses to this builder
     /// it will replace any previously existing mint and mint scripts
     /// NOTE! Error will be returned in case a mint policy does not have a matching script
