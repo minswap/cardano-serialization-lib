@@ -1044,6 +1044,14 @@ pub fn encode_json_value_to_plutus_datum(
     schema: PlutusDatumSchema,
 ) -> Result<PlutusData, JsError> {
     use serde_json::Value;
+
+    fn encode_number_str(s: &str) -> Result<PlutusData, JsError> {
+        match &BigInt::from_str(s) {
+            Ok(x) => Ok(PlutusData::new_integer(x)),
+            Err(_) => Err(JsError::from_str("cannot encode number str")),
+        }
+    }
+
     fn encode_number(x: serde_json::Number) -> Result<PlutusData, JsError> {
         if let Some(x) = x.as_u64() {
             Ok(PlutusData::new_integer(&BigInt::from(x)))
@@ -1121,9 +1129,8 @@ pub fn encode_json_value_to_plutus_datum(
                         JsError::from_str("key does not match type")
                     }
                     match k.as_str() {
-                        "int" => match v {
-                            Value::Number(x) => encode_number(x),
-                            _ => Err(tag_mismatch()),
+                        "int" => {
+                            encode_number_str(v.as_str().ok_or_else(tag_mismatch)?)
                         },
                         "bytes" => {
                             encode_string(v.as_str().ok_or_else(tag_mismatch)?, schema, false)
