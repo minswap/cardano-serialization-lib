@@ -34,6 +34,13 @@ pub fn min_fee(tx: &Transaction, linear_fee: &LinearFee) -> Result<Coin, JsError
 }
 
 #[wasm_bindgen]
+pub fn cal_min_fee(tx_size: usize, linear_fee: &LinearFee) -> Result<Coin, JsError> {
+    to_bignum(tx_size as u64)
+        .checked_mul(&linear_fee.coefficient())?
+        .checked_add(&linear_fee.constant())
+}
+
+#[wasm_bindgen]
 pub fn calculate_ex_units_ceil_cost(
     ex_units: &ExUnits,
     ex_unit_prices: &ExUnitPrices,
