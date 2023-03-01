@@ -1799,6 +1799,14 @@ impl TransactionBuilder {
         return self.outputs.0.iter().map(|o| o.to_bytes().len()).collect();
     }
 
+    pub fn input_sizes(&self) -> Vec<usize> {
+        return self.inputs.inputs().0.iter().map(|o| o.to_bytes().len()).collect();
+    }
+
+    pub fn fee_algo(&self) -> fees::LinearFee {
+        self.config.fee_algo.clone()
+    }
+
     /// Returns object the body of the new transaction
     /// Auxiliary data itself is not included
     /// You can use `get_auxiliary_data` or `build_tx`
@@ -1933,6 +1941,12 @@ impl TransactionBuilder {
         let mut self_copy = self.clone();
         self_copy.set_fee(&to_bignum(0x1_00_00_00_00));
         min_fee(&self_copy)
+    }
+
+    pub fn fake_tx_full_size(&self) -> Result<usize, JsError> {
+        let mut self_copy = self.clone();
+        self_copy.set_fee(&to_bignum(0x1_00_00_00_00));
+        Ok(self_copy.build_and_size()?.1)
     }
 }
 
