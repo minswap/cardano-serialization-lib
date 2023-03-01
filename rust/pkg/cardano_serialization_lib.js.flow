@@ -13,6 +13,16 @@
 declare export function min_fee(tx: Transaction, linear_fee: LinearFee): BigNum;
 
 /**
+ * @param {number} tx_size
+ * @param {LinearFee} linear_fee
+ * @returns {BigNum}
+ */
+declare export function cal_min_fee(
+  tx_size: number,
+  linear_fee: LinearFee
+): BigNum;
+
+/**
  * @param {ExUnits} ex_units
  * @param {ExUnitPrices} ex_unit_prices
  * @returns {BigNum}
@@ -8073,6 +8083,11 @@ declare export class TransactionBuilder {
   index_of_input(input: TransactionInput): number;
 
   /**
+   * @returns {TransactionInputs}
+   */
+  get_inputs(): TransactionInputs;
+
+  /**
    * Set explicit Mint object and the required witnesses to this builder
    * it will replace any previously existing mint and mint scripts
    * NOTE! Error will be returned in case a mint policy does not have a matching script
@@ -8258,6 +8273,16 @@ declare export class TransactionBuilder {
   output_sizes(): Uint32Array;
 
   /**
+   * @returns {Uint32Array}
+   */
+  input_sizes(): Uint32Array;
+
+  /**
+   * @returns {LinearFee}
+   */
+  fee_algo(): LinearFee;
+
+  /**
    * Returns object the body of the new transaction
    * Auxiliary data itself is not included
    * You can use `get_auxiliary_data` or `build_tx`
@@ -8287,6 +8312,11 @@ declare export class TransactionBuilder {
    * @returns {BigNum}
    */
   min_fee(): BigNum;
+
+  /**
+   * @returns {number}
+   */
+  fake_tx_full_size(): number;
 }
 /**
  */
