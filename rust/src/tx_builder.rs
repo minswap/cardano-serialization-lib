@@ -10,6 +10,18 @@ use crate::tx_builder::tx_inputs_builder::{get_bootstraps, TxInputsBuilder};
 use linked_hash_map::LinkedHashMap;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use tx_inputs_builder::{PlutusWitness, PlutusWitnesses};
+use uplc::tx::eval_phase_two_raw;
+
+#[wasm_bindgen]
+pub fn apply_params_to_plutus_script(
+    params: &PlutusList,
+    plutus_script: PlutusScript,
+) -> Result<PlutusScript, JsError> {
+    match uplc::tx::apply_params_to_script(&params.to_bytes(), &plutus_script.bytes()) {
+        Ok(res) => Ok(PlutusScript::new(res)),
+        Err(err) => Err(JsError::from_str(&err.to_string())),
+    }
+}
 
 // comes from witsVKeyNeeded in the Ledger spec
 fn witness_keys_for_cert(cert_enum: &Certificate) -> RequiredSigners {
