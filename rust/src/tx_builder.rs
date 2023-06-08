@@ -10,6 +10,70 @@ use crate::tx_builder::tx_inputs_builder::{get_bootstraps, TxInputsBuilder};
 use linked_hash_map::LinkedHashMap;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use tx_inputs_builder::{PlutusWitness, PlutusWitnesses};
+use uplc::tx::eval_phase_two_raw;
+
+#[wasm_bindgen]
+pub fn apply_params_to_plutus_script(
+    params: &PlutusList,
+    plutus_script: PlutusScript,
+) -> Result<PlutusScript, JsError> {
+    match uplc::tx::apply_params_to_script(&params.to_bytes(), &plutus_script.bytes()) {
+        Ok(res) => Ok(PlutusScript::new(res)),
+        Err(err) => Err(JsError::from_str(&err.to_string())),
+    }
+}
+
+#[wasm_bindgen]
+pub fn get_ex_units(
+    tx: &Transaction,
+    utxos: &TransactionUnspentOutputs,
+    cost_mdls: &Costmdls,
+    max_ex_units: &ExUnits,
+    zero_time: BigNum,
+    zero_slot: BigNum,
+    slot_length: u32,
+) -> Result<Redeemers, JsError> {
+    let tx_bytes = tx.to_bytes();
+
+    let utxos_bytes: Vec<(Vec<u8>, Vec<u8>)> = utxos
+        .0
+        .iter()
+        .map(|utxo| (utxo.input.to_bytes(), utxo.output.to_bytes()))
+        .collect();
+
+    let cost_mdls_bytes = cost_mdls.to_bytes();
+
+    let initial_budget = (
+        from_bignum(&max_ex_units.steps()),
+        from_bignum(&max_ex_units.mem()),
+    );
+
+    let sc = (
+        from_bignum(&zero_time),
+        from_bignum(&zero_slot),
+        slot_length,
+    );
+
+    let result = eval_phase_two_raw(
+        &tx_bytes,
+        &utxos_bytes,
+        &cost_mdls_bytes,
+        initial_budget,
+        sc,
+        false,
+        |_| (),
+    );
+
+    match result {
+        Ok(redeemers_bytes) => Ok(Redeemers(
+            redeemers_bytes
+                .iter()
+                .map(|r| Redeemer::from_bytes(r.to_vec()).unwrap())
+                .collect(),
+        )),
+        Err(err) => Err(JsError::from_str(&err.to_string())),
+    }
+}
 
 // comes from witsVKeyNeeded in the Ledger spec
 fn witness_keys_for_cert(cert_enum: &Certificate) -> RequiredSigners {
