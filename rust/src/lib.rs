@@ -2055,58 +2055,34 @@ pub enum NativeScriptEnum {
     TimelockExpiry(TimelockExpiry),
 }
 
-#[derive(
-    Debug, Clone, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
-)]
-pub enum ScriptRefEnum {
-    NativeScript(NativeScript),
-    PlutusScript(PlutusScript),
-}
-
 #[wasm_bindgen]
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
 )]
-pub struct ScriptRef(ScriptRefEnum);
+pub struct ScriptRef(Script);
 
 impl_to_from!(ScriptRef);
 
 #[wasm_bindgen]
 impl ScriptRef {
+    pub fn new(script: &Script) -> Self {
+        Self(script.clone())
+    }
+
     pub fn new_native_script(native_script: &NativeScript) -> Self {
-        Self(ScriptRefEnum::NativeScript(native_script.clone()))
+        Self(Script::new_native(native_script))
     }
 
     pub fn new_plutus_script(plutus_script: &PlutusScript) -> Self {
-        Self(ScriptRefEnum::PlutusScript(plutus_script.clone()))
-    }
-
-    pub fn is_native_script(&self) -> bool {
-        match &self.0 {
-            ScriptRefEnum::NativeScript(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_plutus_script(&self) -> bool {
-        match &self.0 {
-            ScriptRefEnum::PlutusScript(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn native_script(&self) -> Option<NativeScript> {
-        match &self.0 {
-            ScriptRefEnum::NativeScript(native_script) => Some(native_script.clone()),
-            _ => None,
+        let language_kind = plutus_script.language_version().kind().clone();
+        match language_kind {
+            LanguageKind::PlutusV1 => Self(Script::new_plutus_v1(plutus_script)),
+            LanguageKind::PlutusV2 => Self(Script::new_plutus_v2(plutus_script))
         }
     }
 
     pub fn plutus_script(&self) -> Option<PlutusScript> {
-        match &self.0 {
-            ScriptRefEnum::PlutusScript(plutus_script) => Some(plutus_script.clone()),
-            _ => None,
-        }
+        self.0.as_plutus().clone()
     }
 }
 
