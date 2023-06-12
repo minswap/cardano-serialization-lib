@@ -1028,17 +1028,6 @@ impl Deserialize for ScriptRef {
     }
 }
 
-// impl cbor_event::se::Serialize for ScriptRef {
-//     fn serialize<'a, W: Write + Sized>(
-//         &self,
-//         serializer: &'a mut Serializer<W>,
-//     ) -> cbor_event::Result<&'a mut Serializer<W>> {
-//         let bytes = to_bytes(&self.0);
-//         serializer.write_tag(24)?.write_bytes(&bytes)?;
-//         Ok(serializer)
-//     }
-// }
-
 impl cbor_event::se::Serialize for ScriptRef {
     fn serialize<'se, W: Write>(
         &self,

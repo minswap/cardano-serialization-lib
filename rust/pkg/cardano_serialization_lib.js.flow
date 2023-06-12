@@ -364,6 +364,15 @@ declare export var NetworkIdKind: {|
 /**
  */
 
+declare export var ScriptKind: {|
+  +NativeScript: 0, // 0
+  +PlutusScriptV1: 1, // 1
+  +PlutusScriptV2: 2, // 2
+|};
+
+/**
+ */
+
 declare export var LanguageKind: {|
   +PlutusV1: 0, // 0
   +PlutusV2: 1, // 1
@@ -6337,6 +6346,76 @@ declare export class RewardAddresses {
 }
 /**
  */
+declare export class Script {
+  free(): void;
+
+  /**
+   * @returns {Uint8Array}
+   */
+  to_bytes(): Uint8Array;
+
+  /**
+   * @param {Uint8Array} bytes
+   * @returns {Script}
+   */
+  static from_bytes(bytes: Uint8Array): Script;
+
+  /**
+   * @returns {string}
+   */
+  to_hex(): string;
+
+  /**
+   * @param {string} hex_str
+   * @returns {Script}
+   */
+  static from_hex(hex_str: string): Script;
+
+  /**
+   * @param {NativeScript} native_script
+   * @returns {Script}
+   */
+  static new_native(native_script: NativeScript): Script;
+
+  /**
+   * @param {PlutusScript} plutus_script
+   * @returns {Script}
+   */
+  static new_plutus_v1(plutus_script: PlutusScript): Script;
+
+  /**
+   * @param {PlutusScript} plutus_script
+   * @returns {Script}
+   */
+  static new_plutus_v2(plutus_script: PlutusScript): Script;
+
+  /**
+   * @returns {number}
+   */
+  kind(): number;
+
+  /**
+   * @returns {NativeScript | void}
+   */
+  as_native(): NativeScript | void;
+
+  /**
+   * @returns {PlutusScript | void}
+   */
+  as_plutus(): PlutusScript | void;
+
+  /**
+   * @returns {PlutusScript | void}
+   */
+  as_plutus_v1(): PlutusScript | void;
+
+  /**
+   * @returns {PlutusScript | void}
+   */
+  as_plutus_v2(): PlutusScript | void;
+}
+/**
+ */
 declare export class ScriptAll {
   free(): void;
 
@@ -6743,6 +6822,12 @@ declare export class ScriptRef {
   static from_json(json: string): ScriptRef;
 
   /**
+   * @param {Script} script
+   * @returns {ScriptRef}
+   */
+  static new(script: Script): ScriptRef;
+
+  /**
    * @param {NativeScript} native_script
    * @returns {ScriptRef}
    */
@@ -6753,21 +6838,6 @@ declare export class ScriptRef {
    * @returns {ScriptRef}
    */
   static new_plutus_script(plutus_script: PlutusScript): ScriptRef;
-
-  /**
-   * @returns {boolean}
-   */
-  is_native_script(): boolean;
-
-  /**
-   * @returns {boolean}
-   */
-  is_plutus_script(): boolean;
-
-  /**
-   * @returns {NativeScript | void}
-   */
-  native_script(): NativeScript | void;
 
   /**
    * @returns {PlutusScript | void}
@@ -10500,14 +10570,18 @@ export interface ScriptNOfKJSON {
 export interface ScriptPubkeyJSON {
   addr_keyhash: string;
 }
-export type ScriptRefJSON = ScriptRefEnumJSON;
-export type ScriptRefEnumJSON =
+export type ScriptRefJSON = ScriptJSON;
+export type ScriptJSON =
   | {
       NativeScriptJSON: NativeScript,
       ...
     }
   | {
-      PlutusScriptJSON: string,
+      PlutusScriptV1: string,
+      ...
+    }
+  | {
+      PlutusScriptV2: string,
       ...
     };
 export interface SingleHostAddrJSON {
@@ -10525,7 +10599,7 @@ export type StakeCredTypeJSON =
       ...
     }
   | {
-      Script: string,
+      ScriptJSON: string,
       ...
     };
 export type StakeCredentialJSON = StakeCredTypeJSON;
@@ -10586,7 +10660,7 @@ export interface TransactionOutputJSON {
   address: string;
   amount: ValueJSON;
   plutus_data?: DataOptionJSON | null;
-  script_ref?: ScriptRefJSON | null;
+  script_ref?: ScriptJSON | null;
 }
 export type TransactionOutputsJSON = TransactionOutputJSON[];
 export interface TransactionUnspentOutputJSON {
