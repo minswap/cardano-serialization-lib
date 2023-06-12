@@ -1008,71 +1008,13 @@ impl cbor_event::se::Serialize for DataOption {
     }
 }
 
-impl Deserialize for ScriptRefEnum {
-    fn deserialize<R: BufRead + Seek>(raw: &mut Deserializer<R>) -> Result<Self, DeserializeError> {
-        (|| -> Result<_, DeserializeError> {
-            let len = raw.array()?;
-            if let cbor_event::Len::Len(n) = len {
-                if n != 2 {
-                    return Err(DeserializeFailure::CBOR(cbor_event::Error::WrongLen(
-                        2,
-                        len,
-                        "[id, native_or_putus_script]",
-                    ))
-                    .into());
-                }
-            }
-            let script_ref = match raw.unsigned_integer()? {
-                0 => ScriptRefEnum::NativeScript(NativeScript::deserialize(raw)?),
-                1 => ScriptRefEnum::PlutusScript(PlutusScript::deserialize(raw)?),
-                2 => ScriptRefEnum::PlutusScript(
-                    PlutusScript::deserialize(raw)?.clone_as_version(&Language::new_plutus_v2()),
-                ),
-                n => {
-                    return Err(DeserializeFailure::FixedValueMismatch {
-                        found: Key::Uint(n),
-                        expected: Key::Uint(0),
-                    }
-                    .into())
-                }
-            };
-            if let cbor_event::Len::Indefinite = len {
-                if raw.special()? != CBORSpecial::Break {
-                    return Err(DeserializeFailure::EndingBreakMissing.into());
-                }
-            }
-            Ok(script_ref)
-        })()
-        .map_err(|e| e.annotate("ScriptRefEnum"))
-    }
-}
-
-impl cbor_event::se::Serialize for ScriptRefEnum {
-    fn serialize<'a, W: Write + Sized>(
-        &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> cbor_event::Result<&'a mut Serializer<W>> {
-        serializer.write_array(cbor_event::Len::Len(2))?;
-        match &self {
-            ScriptRefEnum::NativeScript(native_script) => {
-                serializer.write_unsigned_integer(0)?;
-                native_script.serialize(serializer)?;
-            }
-            ScriptRefEnum::PlutusScript(plutus_script) => {
-                serializer.write_unsigned_integer(plutus_script.script_namespace() as u64)?;
-                plutus_script.serialize(serializer)?;
-            }
-        }
-        Ok(serializer)
-    }
-}
-
 impl Deserialize for ScriptRef {
     fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self, DeserializeError> {
         (|| -> Result<_, DeserializeError> {
             match raw.tag()? {
                 //bytes string tag
-                24 => Ok(ScriptRef(from_bytes(&raw.bytes()?)?)),
+                // 24 => Ok(ScriptRef(from_bytes(&raw.bytes()?)?)),
+                24 => Ok(Self(Script::from_bytes(raw.bytes()?).unwrap())),
                 tag => {
                     return Err(DeserializeFailure::TagMismatch {
                         found: tag,
@@ -1086,14 +1028,24 @@ impl Deserialize for ScriptRef {
     }
 }
 
+// impl cbor_event::se::Serialize for ScriptRef {
+//     fn serialize<'a, W: Write + Sized>(
+//         &self,
+//         serializer: &'a mut Serializer<W>,
+//     ) -> cbor_event::Result<&'a mut Serializer<W>> {
+//         let bytes = to_bytes(&self.0);
+//         serializer.write_tag(24)?.write_bytes(&bytes)?;
+//         Ok(serializer)
+//     }
+// }
+
 impl cbor_event::se::Serialize for ScriptRef {
-    fn serialize<'a, W: Write + Sized>(
+    fn serialize<'se, W: Write>(
         &self,
-        serializer: &'a mut Serializer<W>,
-    ) -> cbor_event::Result<&'a mut Serializer<W>> {
-        let bytes = to_bytes(&self.0);
-        serializer.write_tag(24)?.write_bytes(&bytes)?;
-        Ok(serializer)
+        serializer: &'se mut Serializer<W>,
+    ) -> cbor_event::Result<&'se mut Serializer<W>> {
+        serializer.write_tag(24u64)?;
+        serializer.write_bytes(&self.0.to_bytes())
     }
 }
 
@@ -4921,6 +4873,7 @@ impl Deserialize for NetworkId {
 
 #[cfg(test)]
 mod tests {
+    use digest::generic_array::typenum::assert_type;
     use super::*;
     use crate::fakes::{
         fake_base_address, fake_bytes_32, fake_data_hash, fake_signature, fake_tx_input,
@@ -5447,14 +5400,19 @@ mod tests {
         assert_eq!(ScriptRef::from_bytes(ref0.to_bytes()).unwrap(), ref0);
 
         let bytes = hex::decode("4e4d01000033222220051200120011").unwrap();
+        let bytes_v2 = hex::decode("5901f30100003232323232323232323232322223232533300a3232533300c002100114a066646002002444a66602600429404c8c94ccc040cdc78010018a5113330050050010033016003375c60280046eb0cc01cc024cc01cc024011200048040dd71980398048012400066e3cdd7198031804001240009110d48656c6c6f2c20576f726c642100149858cc028c94ccc028cdc3a400000226464a66602260260042930a99807249334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375c6022002601000a2a660189212b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e7400163008004004330093253330093370e900000089919299980818090010a4c2a6601a9201334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375c6020002600e0062a660169212b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e740016300700200233001001480008888cccc01ccdc38008018069199980280299b8000448008c03c0040080088c01cdd5000918029baa0015734ae6d5ce2ab9d5573caae7d5d0aba201").unwrap();
+
         let script_v1 = PlutusScript::from_bytes(bytes.clone()).unwrap();
-        let script_v2 = PlutusScript::from_bytes_v2(bytes.clone()).unwrap();
+        let script_v2 = PlutusScript::new_v2(bytes_v2.clone());
 
         let ref1 = ScriptRef::new_plutus_script(&script_v1);
         assert_eq!(ScriptRef::from_bytes(ref1.to_bytes()).unwrap(), ref1);
 
-        let ref2 = ScriptRef::new_plutus_script(&script_v2);
-        assert_eq!(ScriptRef::from_bytes(ref2.to_bytes()).unwrap(), ref2);
+        let script = Script::new_plutus_v2(&script_v2);
+        let ref2 = ScriptRef::new(&script);
+        let ref_bytes = ref2.to_bytes();
+        let ref3 = ScriptRef::from_bytes(ref_bytes).unwrap();
+        assert_eq!(ref2.to_hex(), ref3.to_hex());
     }
 
     #[test]
@@ -5480,8 +5438,9 @@ mod tests {
         assert_eq!(TransactionOutput::from_bytes(o2.to_bytes()).unwrap(), o2);
 
         let bytes = hex::decode("4e4d01000033222220051200120011").unwrap();
+        let bytes_v2 = hex::decode("5901f30100003232323232323232323232322223232533300a3232533300c002100114a066646002002444a66602600429404c8c94ccc040cdc78010018a5113330050050010033016003375c60280046eb0cc01cc024cc01cc024011200048040dd71980398048012400066e3cdd7198031804001240009110d48656c6c6f2c20576f726c642100149858cc028c94ccc028cdc3a400000226464a66602260260042930a99807249334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375c6022002601000a2a660189212b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e7400163008004004330093253330093370e900000089919299980818090010a4c2a6601a9201334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375c6020002600e0062a660169212b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e740016300700200233001001480008888cccc01ccdc38008018069199980280299b8000448008c03c0040080088c01cdd5000918029baa0015734ae6d5ce2ab9d5573caae7d5d0aba201").unwrap();
         let script_v1 = PlutusScript::from_bytes(bytes.clone()).unwrap();
-        let script_v2 = PlutusScript::from_bytes_v2(bytes.clone()).unwrap();
+        let script_v2 = PlutusScript::from_bytes_v2(bytes_v2.clone()).unwrap();
 
         let mut o3 = TransactionOutput::new(&fake_base_address(2), &fake_value2(234569));
         o3.set_script_ref(&ScriptRef::new_plutus_script(&script_v1));
@@ -5489,17 +5448,17 @@ mod tests {
 
         let mut o4 = TransactionOutput::new(&fake_base_address(3), &fake_value2(234570));
         o4.set_script_ref(&ScriptRef::new_plutus_script(&script_v2));
-        assert_eq!(TransactionOutput::from_bytes(o4.to_bytes()).unwrap(), o4);
+        assert_eq!(TransactionOutput::from_bytes(o4.to_bytes()).unwrap().to_hex(), o4.to_hex());
 
         let mut o5 = TransactionOutput::new(&fake_base_address(4), &fake_value2(234571));
         o5.set_plutus_data(&PlutusData::new_empty_constr_plutus_data(&to_bignum(43)));
         o5.set_script_ref(&ScriptRef::new_plutus_script(&script_v2));
-        assert_eq!(TransactionOutput::from_bytes(o5.to_bytes()).unwrap(), o5);
+        assert_eq!(TransactionOutput::from_bytes(o5.to_bytes()).unwrap().to_hex(), o5.to_hex());
 
         let mut o6 = TransactionOutput::new(&fake_base_address(5), &fake_value2(234572));
         o6.set_data_hash(&fake_data_hash(222));
         o6.set_script_ref(&ScriptRef::new_plutus_script(&script_v2));
-        assert_eq!(TransactionOutput::from_bytes(o6.to_bytes()).unwrap(), o6);
+        assert_eq!(TransactionOutput::from_bytes(o6.to_bytes()).unwrap().to_hex(), o6.to_hex());
     }
 
     #[test]

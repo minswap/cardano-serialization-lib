@@ -150,6 +150,86 @@ impl JsonSchema for PlutusScript {
     }
 }
 
+#[derive(
+Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
+)]
+pub enum ScriptEnum {
+    NativeScript(NativeScript),
+    PlutusScriptV1(PlutusScript),
+    PlutusScriptV2(PlutusScript),
+}
+
+#[wasm_bindgen]
+#[derive(
+Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
+)]
+pub enum ScriptKind {
+    NativeScript,
+    PlutusScriptV1,
+    PlutusScriptV2,
+}
+
+#[wasm_bindgen]
+#[derive(
+Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
+)]
+pub struct Script(ScriptEnum);
+
+to_from_bytes!(Script);
+// to_from_json!(Script);
+
+#[wasm_bindgen]
+impl Script {
+    pub fn new_native(native_script: &NativeScript) -> Self {
+        Self(ScriptEnum::NativeScript(native_script.clone()))
+    }
+
+    pub fn new_plutus_v1(plutus_script: &PlutusScript) -> Self {
+        Self(ScriptEnum::PlutusScriptV1(plutus_script.clone()))
+    }
+
+    pub fn new_plutus_v2(plutus_script: &PlutusScript) -> Self {
+        Self(ScriptEnum::PlutusScriptV2(plutus_script.clone()))
+    }
+
+    pub fn kind(&self) -> ScriptKind {
+        match &self.0 {
+            ScriptEnum::NativeScript(_) => ScriptKind::NativeScript,
+            ScriptEnum::PlutusScriptV1(_) => ScriptKind::PlutusScriptV1,
+            ScriptEnum::PlutusScriptV2(_) => ScriptKind::PlutusScriptV2,
+        }
+    }
+
+    pub fn as_native(&self) -> Option<NativeScript> {
+        match &self.0 {
+            ScriptEnum::NativeScript(native_script) => Some(native_script.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_plutus(&self) -> Option<PlutusScript> {
+        match &self.0 {
+            ScriptEnum::PlutusScriptV1(plutus_script) => Some(plutus_script.clone()),
+            ScriptEnum::PlutusScriptV2(plutus_script) => Some(plutus_script.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_plutus_v1(&self) -> Option<PlutusScript> {
+        match &self.0 {
+            ScriptEnum::PlutusScriptV1(plutus_script) => Some(plutus_script.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_plutus_v2(&self) -> Option<PlutusScript> {
+        match &self.0 {
+            ScriptEnum::PlutusScriptV2(plutus_script) => Some(plutus_script.clone()),
+            _ => None,
+        }
+    }
+}
+
 #[wasm_bindgen]
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
@@ -1295,6 +1375,67 @@ impl cbor_event::se::Serialize for PlutusScript {
 impl Deserialize for PlutusScript {
     fn deserialize<R: BufRead + Seek>(raw: &mut Deserializer<R>) -> Result<Self, DeserializeError> {
         Ok(Self::new(raw.bytes()?))
+    }
+}
+
+impl cbor_event::se::Serialize for Script {
+    fn serialize<'se, W: Write>(
+        &self,
+        serializer: &'se mut Serializer<W>,
+    ) -> cbor_event::Result<&'se mut Serializer<W>> {
+        serializer.write_array(cbor_event::Len::Len(2))?;
+        match &self.0 {
+            ScriptEnum::NativeScript(native_script) => {
+                serializer.write_unsigned_integer(0u64)?;
+                native_script.serialize(serializer)
+            }
+            ScriptEnum::PlutusScriptV1(plutus_script) => {
+                serializer.write_unsigned_integer(1u64)?;
+                plutus_script.serialize(serializer)
+            }
+            ScriptEnum::PlutusScriptV2(plutus_script) => {
+                serializer.write_unsigned_integer(2u64)?;
+                plutus_script.serialize(serializer)
+            }
+        }
+    }
+}
+
+impl Deserialize for Script {
+    fn deserialize<R: BufRead + Seek>(raw: &mut Deserializer<R>) -> Result<Self, DeserializeError> {
+        (|| -> Result<_, DeserializeError> {
+            let len = raw.array()?;
+            if let cbor_event::Len::Len(n) = len {
+                if n != 2 {
+                    return Err(DeserializeFailure::CBOR(cbor_event::Error::WrongLen(
+                        2,
+                        len,
+                        "[id, hash]",
+                    ))
+                        .into());
+                }
+            }
+            let script_enum = match raw.unsigned_integer()? {
+                0 => ScriptEnum::NativeScript(NativeScript::deserialize(raw)?),
+                1 => ScriptEnum::PlutusScriptV1(PlutusScript::deserialize(raw)?),
+                2 => ScriptEnum::PlutusScriptV2(PlutusScript::deserialize(raw)?),
+                n => {
+                    return Err(DeserializeFailure::FixedValueMismatch {
+                        found: Key::Uint(n),
+                        // TODO: change codegen to make FixedValueMismatch support Vec<Key> or ranges or something
+                        expected: Key::Uint(0),
+                    }
+                        .into());
+                }
+            };
+            if let cbor_event::Len::Indefinite = len {
+                if raw.special()? != CBORSpecial::Break {
+                    return Err(DeserializeFailure::EndingBreakMissing.into());
+                }
+            }
+            Ok(Script(script_enum))
+        })()
+            .map_err(|e| e.annotate("Script"))
     }
 }
 
