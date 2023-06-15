@@ -1011,22 +1011,12 @@ impl cbor_event::se::Serialize for DataOption {
 impl Deserialize for ScriptRef {
     fn deserialize<R: BufRead>(raw: &mut Deserializer<R>) -> Result<Self, DeserializeError> {
         (|| -> Result<_, DeserializeError> {
-            // let bytes = raw.bytes()?;
-            // let plutus_script = PlutusScript::from_bytes_v2(raw.bytes().unwrap()).unwrap();
-            // let script = Script::new_plutus_v2(&plutus_script);
-            // let scriptRef = ScriptRef::new(&script);
-
             match raw.tag()? {
                 //bytes string tag
                 24 => {
                     let bytes = &raw.bytes()?;
-                    // let plutus_script = PlutusScript::from_bytes_v2(bytes.clone()).unwrap();
                     Ok(ScriptRef(from_bytes(bytes)?))
                 },
-                // 24 => Ok(ScriptRef(Script::from_bytes(&raw.bytes()?)?)),
-                // 24 => Ok(ScriptRef(Script::from_bytes(bytes)?)),
-                // 24 => Ok(scriptRef),
-                // 24 => Ok(Self(Script::from_bytes(bytes).unwrap())),
                 tag => {
                     return Err(DeserializeFailure::TagMismatch {
                         found: tag,
@@ -5422,7 +5412,6 @@ mod tests {
             &fake_value()
         );
         o2.set_script_ref(&ref2);
-        println!("hehe {}", o2.to_hex());
         let o2_bytes = o2.to_bytes();
         let o3 = TransactionOutput::from_bytes(o2_bytes).unwrap();
         o2.set_script_ref(&ref1);
