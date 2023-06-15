@@ -5414,7 +5414,6 @@ mod tests {
         o2.set_script_ref(&ref2);
         let o2_bytes = o2.to_bytes();
         let o3 = TransactionOutput::from_bytes(o2_bytes).unwrap();
-        o2.set_script_ref(&ref1);
         assert_eq!(o2, o3);
     }
 
