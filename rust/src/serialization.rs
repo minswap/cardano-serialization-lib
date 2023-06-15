@@ -1013,8 +1013,10 @@ impl Deserialize for ScriptRef {
         (|| -> Result<_, DeserializeError> {
             match raw.tag()? {
                 //bytes string tag
-                // 24 => Ok(ScriptRef(from_bytes(&raw.bytes()?)?)),
-                24 => Ok(Self(Script::from_bytes(raw.bytes()?).unwrap())),
+                24 => {
+                    let bytes = &raw.bytes()?;
+                    Ok(ScriptRef(from_bytes(bytes)?))
+                },
                 tag => {
                     return Err(DeserializeFailure::TagMismatch {
                         found: tag,
@@ -1024,17 +1026,18 @@ impl Deserialize for ScriptRef {
                 }
             }
         })()
-        .map_err(|e| e.annotate("ScriptRef"))
+            .map_err(|e| e.annotate("ScriptRef"))
     }
 }
 
 impl cbor_event::se::Serialize for ScriptRef {
-    fn serialize<'se, W: Write>(
+    fn serialize<'a, W: Write + Sized>(
         &self,
-        serializer: &'se mut Serializer<W>,
-    ) -> cbor_event::Result<&'se mut Serializer<W>> {
-        serializer.write_tag(24u64)?;
-        serializer.write_bytes(&self.0.to_bytes())
+        serializer: &'a mut Serializer<W>,
+    ) -> cbor_event::Result<&'a mut Serializer<W>> {
+        let bytes = to_bytes(&self.0);
+        serializer.write_tag(24)?.write_bytes(&bytes)?;
+        Ok(serializer)
     }
 }
 
@@ -4862,6 +4865,7 @@ impl Deserialize for NetworkId {
 
 #[cfg(test)]
 mod tests {
+    use std::ptr::null;
     use digest::generic_array::typenum::assert_type;
     use super::*;
     use crate::fakes::{
@@ -5401,7 +5405,16 @@ mod tests {
         let ref2 = ScriptRef::new(&script);
         let ref_bytes = ref2.to_bytes();
         let ref3 = ScriptRef::from_bytes(ref_bytes).unwrap();
-        assert_eq!(ref2.to_hex(), ref3.to_hex());
+        assert_eq!(ref2, ref3);
+
+        let mut o2 = TransactionOutput::new(
+            &fake_base_address(1),
+            &fake_value()
+        );
+        o2.set_script_ref(&ref2);
+        let o2_bytes = o2.to_bytes();
+        let o3 = TransactionOutput::from_bytes(o2_bytes).unwrap();
+        assert_eq!(o2, o3);
     }
 
     #[test]
@@ -5437,17 +5450,17 @@ mod tests {
 
         let mut o4 = TransactionOutput::new(&fake_base_address(3), &fake_value2(234570));
         o4.set_script_ref(&ScriptRef::new_plutus_script(&script_v2));
-        assert_eq!(TransactionOutput::from_bytes(o4.to_bytes()).unwrap().to_hex(), o4.to_hex());
+        assert_eq!(TransactionOutput::from_bytes(o4.to_bytes()).unwrap(), o4);
 
         let mut o5 = TransactionOutput::new(&fake_base_address(4), &fake_value2(234571));
         o5.set_plutus_data(&PlutusData::new_empty_constr_plutus_data(&to_bignum(43)));
         o5.set_script_ref(&ScriptRef::new_plutus_script(&script_v2));
-        assert_eq!(TransactionOutput::from_bytes(o5.to_bytes()).unwrap().to_hex(), o5.to_hex());
+        assert_eq!(TransactionOutput::from_bytes(o5.to_bytes()).unwrap(), o5);
 
         let mut o6 = TransactionOutput::new(&fake_base_address(5), &fake_value2(234572));
         o6.set_data_hash(&fake_data_hash(222));
         o6.set_script_ref(&ScriptRef::new_plutus_script(&script_v2));
-        assert_eq!(TransactionOutput::from_bytes(o6.to_bytes()).unwrap().to_hex(), o6.to_hex());
+        assert_eq!(TransactionOutput::from_bytes(o6.to_bytes()).unwrap(), o6);
     }
 
     #[test]

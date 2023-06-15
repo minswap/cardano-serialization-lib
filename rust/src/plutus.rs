@@ -1378,6 +1378,10 @@ impl Deserialize for PlutusScript {
     }
 }
 
+fn plutus_v2_deserialize<R: BufRead + Seek>(raw: &mut Deserializer<R>) -> Result<PlutusScript, DeserializeError> {
+    Ok(PlutusScript::new_v2(raw.bytes()?))
+}
+
 impl cbor_event::se::Serialize for Script {
     fn serialize<'se, W: Write>(
         &self,
@@ -1418,7 +1422,7 @@ impl Deserialize for Script {
             let script_enum = match raw.unsigned_integer()? {
                 0 => ScriptEnum::NativeScript(NativeScript::deserialize(raw)?),
                 1 => ScriptEnum::PlutusScriptV1(PlutusScript::deserialize(raw)?),
-                2 => ScriptEnum::PlutusScriptV2(PlutusScript::deserialize(raw)?),
+                2 => ScriptEnum::PlutusScriptV2(plutus_v2_deserialize(raw)?),
                 n => {
                     return Err(DeserializeFailure::FixedValueMismatch {
                         found: Key::Uint(n),
