@@ -2084,6 +2084,10 @@ impl ScriptRef {
     pub fn plutus_script(&self) -> Option<PlutusScript> {
         self.0.as_plutus().clone()
     }
+
+    pub fn script(&self) -> Script {
+        self.0.clone()
+    }
 }
 
 #[derive(
