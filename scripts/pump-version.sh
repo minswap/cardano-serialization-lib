@@ -16,7 +16,10 @@ npm run js:publish-nodejs:prod
 npm run js:publish-browser:prod
 
 echo "commit new version"
-git add package.json package-lock.json rust/Cargo.toml rust/Cargo.lock
+git add \
+  package.json package-lock.json \
+  rust/Cargo.toml rust/Cargo.lock \
+  rust/pkg/cardano_serialization_lib.js.flow
 git commit -m "publish version $version"
 
 echo "tag version"
@@ -25,3 +28,6 @@ git tag "$version"
 echo "push to remote"
 git push origin minswap-11
 git push origin "$version"
+
+echo "clean"
+rm -rf rust/json-gen/schemas
