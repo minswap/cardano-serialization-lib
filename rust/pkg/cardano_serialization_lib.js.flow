@@ -6843,6 +6843,11 @@ declare export class ScriptRef {
    * @returns {PlutusScript | void}
    */
   plutus_script(): PlutusScript | void;
+
+  /**
+   * @returns {Script}
+   */
+  script(): Script;
 }
 /**
  */
