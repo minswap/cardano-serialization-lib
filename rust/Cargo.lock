@@ -341,8 +341,8 @@ dependencies = [
 
 [[package]]
 name = "flat-rs"
-version = "1.0.10-alpha"
-source = "git+https://github.com/aiken-lang/aiken.git?rev=93135cebbb14f9a773b77f825bd4bd099ea90a1b#93135cebbb14f9a773b77f825bd4bd099ea90a1b"
+version = "1.0.19-alpha"
+source = "git+https://github.com/aiken-lang/aiken.git?rev=10b9dc204257328b758692d9c714b576d3b0a1dc#10b9dc204257328b758692d9c714b576d3b0a1dc"
 dependencies = [
  "anyhow",
  "thiserror",
@@ -1223,8 +1223,8 @@ checksum = "c0edd1e5b14653f783770bce4a4dabb4a5108a5370a5f5d8cfe8710c361f6c8b"
 
 [[package]]
 name = "uplc"
-version = "1.0.10-alpha"
-source = "git+https://github.com/aiken-lang/aiken.git?rev=93135cebbb14f9a773b77f825bd4bd099ea90a1b#93135cebbb14f9a773b77f825bd4bd099ea90a1b"
+version = "1.0.19-alpha"
+source = "git+https://github.com/aiken-lang/aiken.git?rev=10b9dc204257328b758692d9c714b576d3b0a1dc#10b9dc204257328b758692d9c714b576d3b0a1dc"
 dependencies = [
  "anyhow",
  "cryptoxide",
