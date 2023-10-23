@@ -16,6 +16,8 @@ use crate::tx_builder::tx_inputs_builder::{get_bootstraps, TxInputsBuilder};
 use linked_hash_map::LinkedHashMap;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use tx_inputs_builder::{PlutusWitness, PlutusWitnesses};
+use crate::tx_builder::mint_builder::{MintBuilder, MintWitness};
+
 use uplc::tx::eval_phase_two_raw;
 
 #[wasm_bindgen]
@@ -1130,16 +1132,16 @@ impl TransactionBuilder {
         Ok(())
     }
 
-    pub fn get_plutus_scripts(&self) -> Option<PlutusScripts> {
-        self.plutus_scripts.clone()
+    pub fn set_mint_builder(&mut self, mint_builder: &MintBuilder) {
+        self.mint = Some(mint_builder.clone());
+    }
+
+    pub fn get_mint_builder(&self) -> Option<MintBuilder> {
+        self.mint.clone()
     }
 
     pub fn set_plutus_scripts(&mut self, plutus_scripts: &PlutusScripts) {
         self.plutus_scripts = Some(plutus_scripts.clone())
-    }
-
-    pub fn get_plutus_data(&self) -> Option<PlutusList> {
-        self.plutus_data.clone()
     }
 
     pub fn set_plutus_data(&mut self, plutus_data: &PlutusList) {
@@ -1160,29 +1162,62 @@ impl TransactionBuilder {
         inputs.0.iter().position(|i| i == input).unwrap()
     }
 
-    pub fn get_inputs(&self) -> TransactionInputs {
-        self.inputs.inputs().clone()
+    /// !!! DEPRECATED !!!
+    /// Mints are defining by MintBuilder now.
+    /// Use `.set_mint_builder()` and `MintBuilder` instead.
+    #[deprecated(
+        since = "11.2.0",
+        note = "Mints are defining by MintBuilder now. Use `.set_mint_builder()` and `MintBuilder` instead."
+    )]
+    /// Set explicit Mint object and the required witnesses to this builder
+    /// it will replace any previously existing mint and mint scripts
+    /// NOTE! Error will be returned in case a mint policy does not have a matching script
+    pub fn set_mint(&mut self, mint: &Mint, mint_scripts: &NativeScripts) -> Result<(), JsError> {
+        assert_required_mint_scripts(mint, Some(mint_scripts))?;
+        let mut scripts_policies = HashMap::new();
+        for scipt in &mint_scripts.0 {
+            scripts_policies.insert(scipt.hash(), scipt.clone());
+        }
+
+        let mut mint_builder = MintBuilder::new();
+
+        for (policy_id, asset_map) in &mint.0 {
+            for (asset_name, amount) in &asset_map.0 {
+                if let Some(script) = scripts_policies.get(policy_id) {
+                    let mint_witness = MintWitness::new_native_script(script);
+                    mint_builder.set_asset(&mint_witness, asset_name, amount);
+                } else {
+                    return Err(JsError::from_str(
+                        "Mint policy does not have a matching script",
+                    ));
+                }
+            }
+        }
+        self.mint = Some(mint_builder);
+        Ok(())
     }
 
     /// Set explicit Mint object and the required witnesses to this builder
     /// it will replace any previously existing mint and mint scripts
     /// NOTE! Error will be returned in case a mint policy does not have a matching script
-    pub fn set_mint(&mut self, mint: &Mint, mint_scripts: &NativeScripts) -> Result<(), JsError> {
-        if !self.minswap_mode {
-            assert_required_mint_scripts(mint, Some(mint_scripts))?;
-        }
-        self.mint = Some(mint.clone());
-        self.mint_scripts = Some(mint_scripts.clone());
-        Ok(())
-    }
+
+    // pub fn set_mint(&mut self, mint: &Mint, mint_scripts: &NativeScripts) -> Result<(), JsError> {
+    //     if !self.minswap_mode {
+    //         assert_required_mint_scripts(mint, Some(mint_scripts))?;
+    //     }
+    //     self.mint = Some(mint.clone());
+    //     self.mint_scripts = Some(mint_scripts.clone());
+    //     Ok(())
+    // }
 
     /// !!! DEPRECATED !!!
     /// Mints are defining by MintBuilder now.
     /// Use `.get_mint_builder()` and `.build()` instead.
     #[deprecated(
-    since = "11.2.0",
-    note = "Mints are defining by MintBuilder now. Use `.get_mint_builder()` and `.build()` instead."
+        since = "11.2.0",
+        note = "Mints are defining by MintBuilder now. Use `.get_mint_builder()` and `.build()` instead."
     )]
+    
     /// Returns a copy of the current mint state in the builder
     pub fn get_mint(&self) -> Option<Mint> {
         match &self.mint {
@@ -2003,7 +2038,9 @@ impl TransactionBuilder {
             if let Some(pw) = self.get_combined_plutus_scripts() {
                 let (scripts, datums, redeemers) = pw.collect();
                 wit.set_plutus_scripts(&scripts);
-                wit.set_plutus_data(&datums);
+                if let Some(datums) = &datums {
+                    wit.set_plutus_data(datums);
+                }
                 wit.set_redeemers(&redeemers);
             }
         }
@@ -2059,22 +2096,21 @@ impl TransactionBuilder {
         self_copy.set_fee(&to_bignum(0x1_00_00_00_00));
         min_fee(&self_copy)
     }
-
-    pub fn fake_tx_full_size(&self) -> Result<usize, JsError> {
-        let mut self_copy = self.clone();
-        self_copy.set_fee(&to_bignum(0x1_00_00_00_00));
-        Ok(self_copy.build_and_size()?.1)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::output_builder::TransactionOutputBuilder;
     use super::*;
-    use crate::fakes::{fake_base_address, fake_bytes_32, fake_data_hash, fake_key_hash, fake_policy_id, fake_tx_hash, fake_tx_input, fake_tx_input2, fake_value, fake_value2};
+    use crate::fakes::{
+        fake_base_address, fake_bytes_32, fake_data_hash, fake_key_hash, fake_policy_id,
+        fake_tx_hash, fake_tx_input, fake_tx_input2, fake_value, fake_value2,
+    };
+    use crate::tx_builder::tx_inputs_builder::{
+        InputWithScriptWitness, InputsWithScriptWitness, PlutusScriptSource,
+    };
     use crate::tx_builder_constants::TxBuilderConstants;
     use fees::*;
-    use crate::tx_builder::tx_inputs_builder::{InputsWithScriptWitness, InputWithScriptWitness, PlutusScriptSource};
 
     const MAX_VALUE_SIZE: u32 = 4000;
     const MAX_TX_SIZE: u32 = 8000; // might be out of date but suffices for our tests
@@ -4809,6 +4845,14 @@ mod tests {
         assert_eq!(_deser_t.to_bytes(), _final_tx.to_bytes());
     }
 
+    fn build_full_tx(
+        body: &TransactionBody,
+        witness_set: &TransactionWitnessSet,
+        auxiliary_data: Option<AuxiliaryData>,
+    ) -> Transaction {
+        return Transaction::new(body, witness_set, auxiliary_data);
+    }
+
     #[test]
     fn build_tx_multisig_spend_1on1_unsigned() {
         let mut tx_builder = create_tx_builder_with_fee(&create_linear_fee(10, 2));
@@ -4999,7 +5043,7 @@ mod tests {
         ));
         witness_set.set_vkeys(&vkw);
 
-        let _final_tx = Transaction::new(&body, &witness_set);
+        let _final_tx = build_full_tx(&body, &witness_set, None);
         let _deser_t = Transaction::from_bytes(_final_tx.to_bytes()).unwrap();
         assert_eq!(_deser_t.to_bytes(), _final_tx.to_bytes());
         assert_eq!(

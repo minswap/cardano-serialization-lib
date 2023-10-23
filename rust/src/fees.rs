@@ -150,7 +150,7 @@ mod tests {
         ));
         w.set_vkeys(&vkw);
 
-        let signed_tx = Transaction::new(&body, &w);
+        let signed_tx = Transaction::new(&body, &w, None);
 
         let linear_fee = LinearFee::new(&to_bignum(500), &to_bignum(2));
         assert_eq!(
@@ -204,7 +204,7 @@ mod tests {
         ));
         w.set_bootstraps(&bootstrap_wits);
 
-        let signed_tx = Transaction::new(&body, &w);
+        let signed_tx = Transaction::new(&body, &w, None);
 
         let linear_fee = LinearFee::new(&to_bignum(500), &to_bignum(2));
         assert_eq!(
@@ -291,7 +291,7 @@ mod tests {
         ));
         w.set_vkeys(&vkw);
 
-        let signed_tx = Transaction::new(&body, &w);
+        let signed_tx = Transaction::new(&body, &w, None);
 
         let linear_fee = LinearFee::new(&to_bignum(500), &to_bignum(2));
         assert_eq!(
@@ -412,7 +412,7 @@ mod tests {
         ));
         w.set_vkeys(&vkw);
 
-        let signed_tx = Transaction::new(&body, &w);
+        let signed_tx = Transaction::new(&body, &w, None);
 
         let linear_fee = LinearFee::new(&to_bignum(500), &to_bignum(2));
         assert_eq!(
@@ -625,7 +625,7 @@ mod tests {
         ));
         w.set_vkeys(&vkw);
 
-        let signed_tx = Transaction::new(&body, &w);
+        let signed_tx = Transaction::new(&body, &w, None);
 
         let linear_fee = LinearFee::new(&to_bignum(500), &to_bignum(2));
         assert_eq!(
