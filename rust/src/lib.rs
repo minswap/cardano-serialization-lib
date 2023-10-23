@@ -22,7 +22,7 @@ use std::io::{BufRead, Seek, Write};
 use noop_proc_macro::wasm_bindgen;
 
 #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::prelude::{JsValue, wasm_bindgen};
 
 // This file was code-generated using an experimental CDDL to rust tool:
 // https://github.com/Emurgo/cddl-codegen
@@ -52,10 +52,13 @@ pub mod traits;
 pub mod tx_builder;
 pub mod tx_builder_constants;
 pub mod typed_bytes;
+pub mod protocol_types;
+pub mod ser_info;
 #[macro_use]
 pub mod utils;
 mod fakes;
 mod serialization_macros;
+mod serialization_tools;
 
 use crate::traits::NoneOrEmpty;
 use address::*;
@@ -69,6 +72,7 @@ use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::fmt;
 use utils::*;
+use ser_info::types::*;
 
 type DeltaCoin = Int;
 
@@ -108,7 +112,7 @@ type Slot32 = u32;
 type SlotBigNum = BigNum;
 
 #[wasm_bindgen]
-#[derive(Clone, serde::Serialize, serde::Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
 pub struct Transaction {
     body: TransactionBody,
     witness_set: TransactionWitnessSet,
@@ -219,6 +223,15 @@ impl TransactionOutputs {
 
     pub fn add(&mut self, elem: &TransactionOutput) {
         self.0.push(elem.clone());
+    }
+}
+
+impl<'a> IntoIterator for &'a TransactionOutputs {
+    type Item = &'a TransactionOutput;
+    type IntoIter = std::slice::Iter<'a, TransactionOutput>;
+
+    fn into_iter(self) -> std::slice::Iter<'a, TransactionOutput> {
+        self.0.iter()
     }
 }
 
@@ -589,13 +602,16 @@ impl TransactionInput {
 
 #[wasm_bindgen]
 #[derive(
-    Debug, Clone, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
+    Debug, Clone, Eq, Ord, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
 )]
 pub struct TransactionOutput {
     address: Address,
     amount: Value,
     plutus_data: Option<DataOption>,
     script_ref: Option<ScriptRef>,
+
+    #[serde(skip)]
+    serialization_format: Option<CborContainerType>,
 }
 
 impl_to_from!(TransactionOutput);
@@ -664,7 +680,21 @@ impl TransactionOutput {
             amount: amount.clone(),
             plutus_data: None,
             script_ref: None,
+            serialization_format: None,
         }
+    }
+
+    pub fn serialization_format(&self) -> Option<CborContainerType> {
+        self.serialization_format.clone()
+    }
+}
+
+impl PartialEq for TransactionOutput {
+    fn eq(&self, other: &Self) -> bool {
+        self.address == other.address
+            && self.amount == other.amount
+            && self.plutus_data == other.plutus_data
+            && self.script_ref == other.script_ref
     }
 }
 
@@ -2099,6 +2129,36 @@ pub enum DataOption {
 }
 
 #[wasm_bindgen]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd )]
+pub struct OutputDatum(pub(crate) DataOption);
+
+#[wasm_bindgen]
+impl OutputDatum {
+
+    pub fn new_data_hash(data_hash: &DataHash) -> Self {
+        Self(DataOption::DataHash(data_hash.clone()))
+    }
+
+    pub fn new_data(data: &PlutusData) -> Self {
+        Self(DataOption::Data(data.clone()))
+    }
+
+    pub fn data_hash(&self) -> Option<DataHash> {
+        match &self.0 {
+            DataOption::DataHash(data_hash) => Some(data_hash.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn data(&self) -> Option<PlutusData> {
+        match &self.0 {
+            DataOption::Data(data) => Some(data.clone()),
+            _ => None,
+        }
+    }
+}
+
+#[wasm_bindgen]
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
 )]
@@ -3124,7 +3184,7 @@ impl HeaderBody {
 }
 
 #[wasm_bindgen]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AssetName(Vec<u8>);
 
 impl Display for AssetName {
@@ -3434,6 +3494,23 @@ impl PartialOrd for MultiAsset {
 }
 
 #[wasm_bindgen]
+pub struct MintsAssets(Vec<MintAssets>);
+
+impl MintsAssets {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn add(&mut self, mint_assets: MintAssets) {
+        self.0.push(mint_assets)
+    }
+
+    pub fn get(&self, index: usize) -> Option<MintAssets> {
+        self.0.get(index).map(|v| v.clone())
+    }
+}
+
+#[wasm_bindgen]
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
 )]
@@ -3477,14 +3554,14 @@ impl MintAssets {
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
 )]
-pub struct Mint(std::collections::BTreeMap<PolicyID, MintAssets>);
+pub struct Mint(Vec<(PolicyID, MintAssets)>);
 
 impl_to_from!(Mint);
 
 #[wasm_bindgen]
 impl Mint {
     pub fn new() -> Self {
-        Self(std::collections::BTreeMap::new())
+        Self(Vec::new())
     }
 
     pub fn new_from_entry(key: &PolicyID, value: &MintAssets) -> Self {
@@ -3497,25 +3574,51 @@ impl Mint {
         self.0.len()
     }
 
+    //always returns None, because insert doesn't replace an old value
     pub fn insert(&mut self, key: &PolicyID, value: &MintAssets) -> Option<MintAssets> {
-        self.0.insert(key.clone(), value.clone())
+        self.0.push((key.clone(), value.clone()));
+        None
     }
 
+    /// !!! DEPRECATED !!!
+    /// Mint can store multiple entries for the same policy id.
+    /// Use `.get_all` instead.
+    #[deprecated(
+    since = "11.2.0",
+    note = "Mint can store multiple entries for the same policy id. Use `.get_all` instead."
+    )]
     pub fn get(&self, key: &PolicyID) -> Option<MintAssets> {
-        self.0.get(key).map(|v| v.clone())
+        self.0
+            .iter()
+            .filter(|(k, _)| k.eq(key))
+            .next()
+            .map(|(_k, v)| v.clone())
+    }
+
+    pub fn get_all(&self, key: &PolicyID) -> Option<MintsAssets> {
+        let mints : Vec<MintAssets> = self.0
+            .iter()
+            .filter(|(k, _)| k.eq(key))
+            .map(|(_k, v)| v.clone())
+            .collect();
+        if mints.is_empty() {
+            None
+        } else {
+            Some(MintsAssets(mints))
+        }
     }
 
     pub fn keys(&self) -> PolicyIDs {
         ScriptHashes(
             self.0
                 .iter()
-                .map(|(k, _v)| k.clone())
+                .map(|(k, _)| k.clone())
                 .collect::<Vec<ScriptHash>>(),
         )
     }
 
     fn as_multiasset(&self, is_positive: bool) -> MultiAsset {
-        self.0.iter().fold(MultiAsset::new(), |res, e| {
+        self.0.iter().fold(MultiAsset::new(), |res, e : &(PolicyID, MintAssets) | {
             let assets: Assets = (e.1).0.iter().fold(Assets::new(), |res, e| {
                 let mut assets = res;
                 if e.1.is_positive() == is_positive {
@@ -3523,13 +3626,13 @@ impl Mint {
                         true => e.1.as_positive(),
                         false => e.1.as_negative(),
                     };
-                    assets.insert(e.0, &amount.unwrap());
+                    assets.insert(&e.0, &amount.unwrap());
                 }
                 assets
             });
             let mut ma = res;
             if !assets.0.is_empty() {
-                ma.insert(e.0, &assets);
+                ma.insert(&e.0, &assets);
             }
             ma
         })
@@ -3625,6 +3728,7 @@ impl From<&NativeScripts> for RequiredSignersSet {
 
 #[cfg(test)]
 mod tests {
+    use crate::tx_builder_constants::TxBuilderConstants;
     use super::*;
 
     #[test]
@@ -3875,5 +3979,40 @@ mod tests {
         assert!(pks4.contains(&keyhash1));
         assert!(pks4.contains(&keyhash2));
         assert!(pks4.contains(&keyhash3));
+    }
+
+    #[test]
+    fn protocol_params_update_cbor_roundtrip() {
+        let mut orig_ppu = ProtocolParamUpdate::new();
+        orig_ppu.set_max_tx_size(1234);
+        orig_ppu.set_max_block_body_size(5678);
+        orig_ppu.set_max_block_header_size(91011);
+        orig_ppu.set_minfee_a(&Coin::from(1u32));
+        orig_ppu.set_minfee_b(&Coin::from(2u32));
+        orig_ppu.set_key_deposit(&Coin::from(3u32));
+        orig_ppu.set_pool_deposit(&Coin::from(4u32));
+        orig_ppu.set_max_epoch(5);
+        orig_ppu.set_n_opt(6);
+        orig_ppu.set_pool_pledge_influence(&Rational::new(&BigNum::from(7u32), &BigNum::from(77u32)));
+        orig_ppu.set_expansion_rate(&UnitInterval::new(&BigNum::from(8u32), &BigNum::from(9u32)));
+        orig_ppu.set_treasury_growth_rate(&UnitInterval::new(&BigNum::from(10u32), &BigNum::from(11u32)));
+        orig_ppu.set_protocol_version(&ProtocolVersion::new(12u32,13u32));
+        orig_ppu.set_min_pool_cost(&Coin::from(14u32));
+        orig_ppu.set_ada_per_utxo_byte(&Coin::from(15u32));
+        orig_ppu.set_cost_models(&TxBuilderConstants::plutus_vasil_cost_models());
+        orig_ppu.set_execution_costs(&ExUnitPrices::new(
+            &SubCoin::new(&BigNum::from(16u32), &BigNum::from(17u32)),
+            &SubCoin::new(&BigNum::from(18u32), &BigNum::from(19u32))));
+        orig_ppu.set_max_tx_ex_units(&ExUnits::new(&BigNum::from(20u32), &BigNum::from(21u32)));
+        orig_ppu.set_max_block_ex_units(&ExUnits::new(&BigNum::from(22u32), &BigNum::from(23u32)));
+        orig_ppu.set_max_value_size(24);
+        orig_ppu.set_collateral_percentage(25);
+        orig_ppu.set_max_collateral_inputs(25);
+
+        let encoded = orig_ppu.to_bytes();
+        let dencoded = ProtocolParamUpdate::from_bytes(encoded).unwrap();
+
+        assert_eq!(dencoded, orig_ppu);
+        assert_eq!(dencoded.to_bytes(), orig_ppu.to_bytes());
     }
 }
