@@ -12,6 +12,29 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use tx_inputs_builder::{PlutusWitness, PlutusWitnesses};
 use uplc::tx::eval_phase_two_raw;
 
+#[derive(Debug, Clone)]
+struct TxBuilderWithdrawal {
+    reward_address: RewardAddress,
+    coin: Coin,
+    redeemer: Option<Redeemer>, // we need to keep track of the redeemer index
+}
+
+fn get_lexical_order_withdrawals(withdrawals: &Vec<TxBuilderWithdrawal>) -> Vec<RewardAddress> {
+    let mut withdrawals = withdrawals
+        .clone()
+        .iter()
+        .map(
+            |TxBuilderWithdrawal {
+                 reward_address,
+                 coin: _,
+                 redeemer: _,
+             }| reward_address.clone(),
+        )
+        .collect::<Vec<RewardAddress>>();
+    withdrawals.sort();
+    withdrawals
+}
+
 #[wasm_bindgen]
 pub fn apply_params_to_plutus_script(
     params: &PlutusList,
@@ -422,7 +445,7 @@ pub struct TransactionBuilder {
     fee: Option<Coin>,
     ttl: Option<SlotBigNum>, // absolute slot number
     certs: Option<Certificates>,
-    withdrawals: Option<Withdrawals>,
+    withdrawals: Option<Vec<TxBuilderWithdrawal>>,
     auxiliary_data: Option<AuxiliaryData>,
     validity_start_interval: Option<SlotBigNum>,
     mint: Option<Mint>,
@@ -1059,13 +1082,99 @@ impl TransactionBuilder {
         }
     }
 
-    pub fn set_withdrawals(&mut self, withdrawals: &Withdrawals) {
-        self.withdrawals = Some(withdrawals.clone());
-        for (withdrawal, _coin) in &withdrawals.0 {
-            self.inputs
-                .add_required_signer(&withdrawal.payment_cred().to_keyhash().unwrap())
+    pub fn withdrawals(&self) -> Option<Withdrawals> {
+        self.withdrawals_array_to_withdrawals()
+    }
+
+    fn withdrawals_array_to_withdrawals(&self) -> Option<Withdrawals> {
+        match &self.withdrawals {
+            Some(tx_builder_withdrawals) => {
+                let mut collected_withdrawals = Withdrawals::new();
+
+                for m in tx_builder_withdrawals.iter() {
+                    collected_withdrawals.insert(&m.reward_address, &m.coin);
+                }
+                Some(collected_withdrawals)
+            }
+            None => None,
         }
     }
+
+    pub fn add_withdrawal(
+        &mut self,
+        reward_address: &RewardAddress,
+        coin: &Coin,
+        ref_input: Option<TransactionInput>,
+        plutus_data: Option<PlutusData>,
+    ) -> Result<(), JsError> {
+        let redeemer = match reward_address.payment_cred().kind() {
+            StakeCredKind::Key => {
+                let key = reward_address.payment_cred().to_keyhash().unwrap();
+                self.inputs.add_required_signer(&key);
+
+                None
+            },
+            StakeCredKind::Script => {
+                if !plutus_data.is_some() {
+                    return Err(JsError::from_str("Missing Redeemer Data!"));
+                }
+                if !ref_input.is_some() {
+                    return Err(JsError::from_str("Missing Ref Input!"));
+                }
+                self.add_reference_input(&ref_input.clone().unwrap());
+                
+                Some(Redeemer::new(
+                    &RedeemerTag::new_reward(),
+                    &to_bignum(0), // will point to correct input when finalizing txBuilder
+                    &plutus_data.clone().unwrap(),
+                    &ExUnits::new(&to_bignum(0), &to_bignum(0)), // correct ex units calculated at the end
+                ))    
+            }
+        };
+        
+        let mut withdrawal_array: Vec<TxBuilderWithdrawal> = self.withdrawals.clone().unwrap_or(Vec::new());
+        withdrawal_array.push(TxBuilderWithdrawal {
+            reward_address: reward_address.clone(),
+            coin: coin.clone(),
+            redeemer,
+        });
+        self.withdrawals = Some(withdrawal_array.clone());
+        Ok(())
+    }
+
+    pub fn collect_withdrawal_redeemers(&mut self) -> Redeemers {
+        let mut result = Redeemers::new();
+        let withdrawals = self.withdrawals.clone().unwrap_or(Vec::new());
+
+        let lexical_order_withdrawals = get_lexical_order_withdrawals(&withdrawals);
+        for w in withdrawals.clone() {
+            if let Some(redeemer) = w.redeemer {
+                let _reward_address = w.reward_address.clone();
+                let index = to_bignum(
+                    lexical_order_withdrawals
+                        .iter()
+                        .position(|reward_address| *reward_address == _reward_address)
+                        .unwrap() as u64,
+                );
+                let new_redeemer = Redeemer::new(
+                    &redeemer.tag(),
+                    &index,
+                    &redeemer.data(),
+                    &redeemer.ex_units(),
+                );
+                result.add(&new_redeemer);
+            }
+        }
+        result
+    }
+    
+    // pub fn set_withdrawals(&mut self, withdrawals: &Withdrawals) {
+    //     self.withdrawals = Some(withdrawals.clone());
+        // for (withdrawal, _coin) in &withdrawals.0 {
+        //     self.inputs
+        //         .add_required_signer(&withdrawal.payment_cred().to_keyhash().unwrap())
+        // }
+    // }
 
     pub fn get_auxiliary_data(&self) -> Option<AuxiliaryData> {
         self.auxiliary_data.clone()
@@ -1359,7 +1468,7 @@ impl TransactionBuilder {
     /// withdrawals and refunds
     pub fn get_implicit_input(&self) -> Result<Value, JsError> {
         internal_get_implicit_input(
-            &self.withdrawals,
+            &self.withdrawals(),
             &self.certs,
             &self.config.pool_deposit,
             &self.config.key_deposit,
@@ -1833,7 +1942,7 @@ impl TransactionBuilder {
             fee,
             ttl: self.ttl,
             certs: self.certs.clone(),
-            withdrawals: self.withdrawals.clone(),
+            withdrawals: self.withdrawals(),
             update: None,
             auxiliary_data_hash: match &self.auxiliary_data {
                 None => None,
