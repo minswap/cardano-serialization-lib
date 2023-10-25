@@ -445,7 +445,7 @@ pub struct TransactionBuilder {
     fee: Option<Coin>,
     ttl: Option<SlotBigNum>, // absolute slot number
     certs: Option<Certificates>,
-    withdrawals: Option<Vec<TxBuilderWithdrawal>>,
+    withdrawals: Vec<TxBuilderWithdrawal>,
     auxiliary_data: Option<AuxiliaryData>,
     validity_start_interval: Option<SlotBigNum>,
     mint: Option<Mint>,
@@ -1083,21 +1083,18 @@ impl TransactionBuilder {
     }
 
     pub fn withdrawals(&self) -> Option<Withdrawals> {
-        self.withdrawals_array_to_withdrawals()
+        match &self.withdrawals.is_empty() {
+            true => None,
+            false => Some(self.withdrawals_array_to_withdrawals()),
+        }
     }
 
-    fn withdrawals_array_to_withdrawals(&self) -> Option<Withdrawals> {
-        match &self.withdrawals {
-            Some(tx_builder_withdrawals) => {
-                let mut collected_withdrawals = Withdrawals::new();
-
-                for m in tx_builder_withdrawals.iter() {
-                    collected_withdrawals.insert(&m.reward_address, &m.coin);
-                }
-                Some(collected_withdrawals)
-            }
-            None => None,
+    fn withdrawals_array_to_withdrawals(&self) -> Withdrawals {
+        let mut collected_withdrawals = Withdrawals::new();
+        for m in self.withdrawals.iter() {
+            collected_withdrawals.insert(&m.reward_address, &m.coin);
         }
+        collected_withdrawals
     }
 
     pub fn add_withdrawal(
@@ -1131,24 +1128,19 @@ impl TransactionBuilder {
                 ))    
             }
         };
-        
-        let mut withdrawal_array: Vec<TxBuilderWithdrawal> = self.withdrawals.clone().unwrap_or(Vec::new());
-        withdrawal_array.push(TxBuilderWithdrawal {
+        self.withdrawals.push(TxBuilderWithdrawal {
             reward_address: reward_address.clone(),
             coin: coin.clone(),
             redeemer,
         });
-        self.withdrawals = Some(withdrawal_array.clone());
         Ok(())
     }
 
     pub fn collect_withdrawal_redeemers(&mut self) -> Redeemers {
         let mut result = Redeemers::new();
-        let withdrawals = self.withdrawals.clone().unwrap_or(Vec::new());
-
-        let lexical_order_withdrawals = get_lexical_order_withdrawals(&withdrawals);
-        for w in withdrawals.clone() {
-            if let Some(redeemer) = w.redeemer {
+        let lexical_order_withdrawals = get_lexical_order_withdrawals(&self.withdrawals);
+        for w in &self.withdrawals {
+            if let Some(redeemer) = &w.redeemer {
                 let _reward_address = w.reward_address.clone();
                 let index = to_bignum(
                     lexical_order_withdrawals
@@ -1429,7 +1421,7 @@ impl TransactionBuilder {
             fee: None,
             ttl: None,
             certs: None,
-            withdrawals: None,
+            withdrawals: vec![],
             auxiliary_data: None,
             validity_start_interval: None,
             mint: None,
