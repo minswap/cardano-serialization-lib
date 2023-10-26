@@ -1103,6 +1103,7 @@ impl TransactionBuilder {
         coin: &Coin,
         ref_input: Option<TransactionInput>,
         plutus_data: Option<PlutusData>,
+        ex_units: Option<ExUnits>,
     ) -> Result<(), JsError> {
         let redeemer = match reward_address.payment_cred().kind() {
             StakeCredKind::Key => {
@@ -1124,7 +1125,7 @@ impl TransactionBuilder {
                     &RedeemerTag::new_reward(),
                     &to_bignum(0), // will point to correct input when finalizing txBuilder
                     &plutus_data.clone().unwrap(),
-                    &ExUnits::new(&to_bignum(0), &to_bignum(0)), // correct ex units calculated at the end
+                    &ex_units.clone().unwrap(),
                 ))    
             }
         };
@@ -1159,14 +1160,6 @@ impl TransactionBuilder {
         }
         result
     }
-    
-    // pub fn set_withdrawals(&mut self, withdrawals: &Withdrawals) {
-    //     self.withdrawals = Some(withdrawals.clone());
-        // for (withdrawal, _coin) in &withdrawals.0 {
-        //     self.inputs
-        //         .add_required_signer(&withdrawal.payment_cred().to_keyhash().unwrap())
-        // }
-    // }
 
     pub fn get_auxiliary_data(&self) -> Option<AuxiliaryData> {
         self.auxiliary_data.clone()
@@ -6591,6 +6584,20 @@ mod tests {
         // There are now three fake witnesses in the builder
         // because all three unique keyhashes got combined
         assert_eq!(get_fake_vkeys_count(&input_builder, &collateral_builder), 3);
+    }
+
+    #[test]
+    fn test_add_withdrawal_validator() {
+        let mut tx_builder = create_reallistic_tx_builder();
+        let plutus_data = PlutusData::new_bytes(fake_bytes_32(20));
+        let ex_units = ExUnits::new(&to_bignum(1), &to_bignum(2));
+        let ref_input = fake_tx_input2(3, 0);
+        let coin = to_bignum(10000);
+        let addr = Address::from_bech32("stake_test17rv54kh022y8jp0pgafd2lupjs9jzcace40r9y7cnmwrgyq80zvgk").unwrap();
+        let reward_address = RewardAddress::from_address(&addr).unwrap();
+        let _ = tx_builder.add_withdrawal(&reward_address, &coin, Some(ref_input), Some(plutus_data), Some(ex_units));
+        let redeemers = tx_builder.collect_withdrawal_redeemers();
+        assert_eq!(redeemers.len(), 1);
     }
 
     #[test]
