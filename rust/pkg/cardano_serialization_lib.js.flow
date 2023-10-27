@@ -8104,6 +8104,12 @@ declare export class TransactionBuilder {
   set_withdrawals(withdrawals: Withdrawals): void;
 
   /**
+   * @param {RewardAddress} reward_address
+   * @returns {number | void}
+   */
+  get_index_of_withdrawal(reward_address: RewardAddress): number | void;
+
+  /**
    * @returns {AuxiliaryData | void}
    */
   get_auxiliary_data(): AuxiliaryData | void;
