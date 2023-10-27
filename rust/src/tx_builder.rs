@@ -1061,10 +1061,13 @@ impl TransactionBuilder {
 
     pub fn set_withdrawals(&mut self, withdrawals: &Withdrawals) {
         self.withdrawals = Some(withdrawals.clone());
-        for (withdrawal, _coin) in &withdrawals.0 {
-            self.inputs
-                .add_required_signer(&withdrawal.payment_cred().to_keyhash().unwrap())
-        }
+    }
+
+    pub fn get_index_of_withdrawal(&mut self, reward_address: &RewardAddress) -> usize {
+        let binding = self.withdrawals.clone().unwrap();
+        let mut withdrawals: Vec<_> = binding.0.iter().collect();
+        withdrawals.sort_by(|(key1, _), (key2, _)| key1.cmp(key2));
+        withdrawals.iter().position(|i| i.0 == reward_address).unwrap()
     }
 
     pub fn get_auxiliary_data(&self) -> Option<AuxiliaryData> {
@@ -4041,6 +4044,18 @@ mod tests {
                     .unwrap()
             )
             .is_err());
+    }
+
+    #[test]
+    fn test_withdrawals() {
+        let mut tx_builder = create_reallistic_tx_builder();
+        let address = Address::from_bech32("stake_test17rv54kh022y8jp0pgafd2lupjs9jzcace40r9y7cnmwrgyq80zvgk").unwrap();
+        let reward_address = RewardAddress::from_address(&address).unwrap();
+        let mut withdrawals = Withdrawals::new();
+        withdrawals.insert(&reward_address, &BigNum::zero());
+        tx_builder.set_withdrawals(&withdrawals);
+        let index = tx_builder.get_index_of_withdrawal(&reward_address);
+        assert_eq!(index , 0);
     }
 
     #[test]
