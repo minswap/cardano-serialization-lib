@@ -1063,11 +1063,11 @@ impl TransactionBuilder {
         self.withdrawals = Some(withdrawals.clone());
     }
 
-    pub fn get_index_of_withdrawal(&mut self, reward_address: &RewardAddress) -> usize {
+    pub fn get_index_of_withdrawal(&mut self, reward_address: &RewardAddress) -> Option<usize> {
         let binding = self.withdrawals.clone().unwrap();
         let mut withdrawals: Vec<_> = binding.0.iter().collect();
         withdrawals.sort_by(|(key1, _), (key2, _)| key1.cmp(key2));
-        withdrawals.iter().position(|i| i.0 == reward_address).unwrap()
+        withdrawals.iter().position(|i| i.0 == reward_address)
     }
 
     pub fn get_auxiliary_data(&self) -> Option<AuxiliaryData> {
@@ -4055,7 +4055,7 @@ mod tests {
         withdrawals.insert(&reward_address, &BigNum::zero());
         tx_builder.set_withdrawals(&withdrawals);
         let index = tx_builder.get_index_of_withdrawal(&reward_address);
-        assert_eq!(index , 0);
+        assert_eq!(index.unwrap(), 0);
     }
 
     #[test]
