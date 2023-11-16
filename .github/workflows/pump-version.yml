@@ -3,7 +3,7 @@ name: Bump Version on Merge
 on:
   push:
     branches:
-      - minswap-11
+      - csl-action-pump-ver # TODO: reverse
 
 jobs:
   bump_version:
@@ -12,10 +12,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-          ref: minswap-11
 
-      - name: Calculate Next Version
+      - name: Calculate next Version
         run: |
             # Get the current version from the subdirectory's package.json
             current_version=$(jq -r '.version' package.json)
@@ -31,3 +29,5 @@ jobs:
       - name: Bump Version and Publish
         run: |
           ./scripts/pump-version.sh ${{ env.NEXT_VERSION }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
