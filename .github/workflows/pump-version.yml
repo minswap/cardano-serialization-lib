@@ -1,4 +1,4 @@
-name: Bump Version on Merge
+name: Bump version on Merge
 
 on:
   push:
@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Calculate next Version
+      - name: Calculate next version
         run: |
             # Get the current version from the subdirectory's package.json
             current_version=$(jq -r '.version' package.json)
@@ -21,12 +21,12 @@ jobs:
             # Calculate and append the next version directly into GITHUB_ENV in one line
             echo "NEXT_VERSION=$(echo "$current_version" | awk -F'[-.]' '{print $1"."$2"."$3"-minswap."$5+1}')" >> "$GITHUB_ENV"
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           npm install --ignore-scripts
           npm install -g wasm-pack
           
-      - name: Bump Version and Publish
+      - name: Bump version and publish
         run: |
           ./scripts/pump-version.sh ${{ env.NEXT_VERSION }}
         env:
