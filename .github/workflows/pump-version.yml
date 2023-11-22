@@ -3,7 +3,7 @@ name: Bump Version on Merge
 on:
   push:
     branches:
-      - csl-action-pump-ver # TODO: reverse
+      - main
 
 jobs:
   bump_version:
