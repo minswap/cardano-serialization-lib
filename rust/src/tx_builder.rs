@@ -1,6 +1,12 @@
 #![allow(deprecated)]
 
+#[cfg(test)]
+mod test_batch;
+
 pub mod tx_inputs_builder;
+pub mod tx_batch_builder;
+pub mod mint_builder;
+mod batch_tools;
 
 use super::fees;
 use super::output_builder::TransactionOutputAmountBuilder;
@@ -8,8 +14,10 @@ use super::utils;
 use super::*;
 use crate::tx_builder::tx_inputs_builder::{get_bootstraps, TxInputsBuilder};
 use linked_hash_map::LinkedHashMap;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use tx_inputs_builder::{PlutusWitness, PlutusWitnesses};
+use crate::tx_builder::mint_builder::{MintBuilder, MintWitness};
+
 use uplc::tx::eval_phase_two_raw;
 
 #[wasm_bindgen]
@@ -105,7 +113,7 @@ fn witness_keys_for_cert(cert_enum: &Certificate) -> RequiredSigners {
     set
 }
 
-fn fake_private_key() -> Bip32PrivateKey {
+pub(crate) fn fake_private_key() -> Bip32PrivateKey {
     Bip32PrivateKey::from_bytes(&[
         0xb8, 0xf2, 0xbe, 0xce, 0x9b, 0xdf, 0xe2, 0xb0, 0x28, 0x2f, 0x5b, 0xad, 0x70, 0x55, 0x62,
         0xac, 0x99, 0x6e, 0xfb, 0x6a, 0xf9, 0x6b, 0x64, 0x8f, 0x44, 0x45, 0xec, 0x44, 0xf4, 0x7a,
@@ -118,7 +126,7 @@ fn fake_private_key() -> Bip32PrivateKey {
     .unwrap()
 }
 
-fn fake_raw_key_sig() -> Ed25519Signature {
+pub(crate) fn fake_raw_key_sig() -> Ed25519Signature {
     Ed25519Signature::from_bytes(vec![
         36, 248, 153, 211, 155, 23, 253, 93, 102, 193, 146, 196, 181, 13, 52, 62, 66, 247, 35, 91,
         48, 80, 76, 138, 231, 97, 159, 147, 200, 40, 220, 109, 206, 69, 104, 221, 105, 23, 124, 85,
@@ -128,7 +136,7 @@ fn fake_raw_key_sig() -> Ed25519Signature {
     .unwrap()
 }
 
-fn fake_raw_key_public() -> PublicKey {
+pub(crate) fn fake_raw_key_public() -> PublicKey {
     PublicKey::from_bytes(&[
         207, 118, 57, 154, 33, 13, 232, 114, 14, 159, 168, 148, 228, 94, 65, 226, 154, 181, 37,
         227, 11, 196, 2, 128, 28, 7, 98, 80, 209, 88, 91, 205,
@@ -140,8 +148,8 @@ fn count_needed_vkeys(tx_builder: &TransactionBuilder) -> usize {
     let mut input_hashes: RequiredSignersSet = RequiredSignersSet::from(&tx_builder.inputs);
     input_hashes.extend(RequiredSignersSet::from(&tx_builder.collateral));
     input_hashes.extend(RequiredSignersSet::from(&tx_builder.required_signers));
-    if let Some(scripts) = &tx_builder.mint_scripts {
-        input_hashes.extend(RequiredSignersSet::from(scripts));
+    if let Some(mint_builder) = &tx_builder.mint {
+        input_hashes.extend(RequiredSignersSet::from(&mint_builder.get_native_scripts()));
     }
     input_hashes.len()
 }
@@ -190,7 +198,7 @@ fn fake_full_tx(
             (tx_builder.plutus_scripts.clone(), tx_builder.plutus_data.clone(), tx_builder.redeemers.clone())
         } else if let Some(s) = tx_builder.get_combined_plutus_scripts() {
             let (s, d, r) = s.collect();
-            (Some(s), Some(d), Some(r))
+            (Some(s), d, Some(r))
         } else {
             (None, None, None)
         }
@@ -425,8 +433,7 @@ pub struct TransactionBuilder {
     withdrawals: Option<Withdrawals>,
     auxiliary_data: Option<AuxiliaryData>,
     validity_start_interval: Option<SlotBigNum>,
-    mint: Option<Mint>,
-    mint_scripts: Option<NativeScripts>,
+    mint: Option<MintBuilder>,
     script_data_hash: Option<ScriptDataHash>,
     required_signers: Ed25519KeyHashes,
     collateral_return: Option<TransactionOutput>,
@@ -924,7 +931,7 @@ impl TransactionBuilder {
 
     /// Returns the number of still missing input scripts (either native or plutus)
     /// Use `.add_required_native_input_scripts` or `.add_required_plutus_input_scripts` to add the missing scripts
-    #[deprecated(since = "10.2.0", note = "Use `.set_inputs`")]
+    #[deprecated(since = "10.2.0", note = "Use `.count_missing_input_scripts` from `TxInputsBuilder`")]
     pub fn count_missing_input_scripts(&self) -> usize {
         self.inputs.count_missing_input_scripts()
     }
@@ -1128,16 +1135,16 @@ impl TransactionBuilder {
         Ok(())
     }
 
-    pub fn get_plutus_scripts(&self) -> Option<PlutusScripts> {
-        self.plutus_scripts.clone()
+    pub fn set_mint_builder(&mut self, mint_builder: &MintBuilder) {
+        self.mint = Some(mint_builder.clone());
+    }
+
+    pub fn get_mint_builder(&self) -> Option<MintBuilder> {
+        self.mint.clone()
     }
 
     pub fn set_plutus_scripts(&mut self, plutus_scripts: &PlutusScripts) {
         self.plutus_scripts = Some(plutus_scripts.clone())
-    }
-
-    pub fn get_plutus_data(&self) -> Option<PlutusList> {
-        self.plutus_data.clone()
     }
 
     pub fn set_plutus_data(&mut self, plutus_data: &PlutusList) {
@@ -1158,86 +1165,110 @@ impl TransactionBuilder {
         inputs.0.iter().position(|i| i == input).unwrap()
     }
 
-    pub fn get_inputs(&self) -> TransactionInputs {
-        self.inputs.inputs().clone()
+    /// !!! DEPRECATED !!!
+    /// Mints are defining by MintBuilder now.
+    /// Use `.set_mint_builder()` and `MintBuilder` instead.
+    #[deprecated(
+        since = "11.2.0",
+        note = "Mints are defining by MintBuilder now. Use `.set_mint_builder()` and `MintBuilder` instead."
+    )]
+    /// Set explicit Mint object and the required witnesses to this builder
+    /// it will replace any previously existing mint and mint scripts
+    /// NOTE! Error will be returned in case a mint policy does not have a matching script
+    pub fn set_mint(&mut self, mint: &Mint, mint_scripts: &NativeScripts) -> Result<(), JsError> {
+        assert_required_mint_scripts(mint, Some(mint_scripts))?;
+        let mut scripts_policies = HashMap::new();
+        for scipt in &mint_scripts.0 {
+            scripts_policies.insert(scipt.hash(), scipt.clone());
+        }
+
+        let mut mint_builder = MintBuilder::new();
+
+        for (policy_id, asset_map) in &mint.0 {
+            for (asset_name, amount) in &asset_map.0 {
+                if let Some(script) = scripts_policies.get(policy_id) {
+                    let mint_witness = MintWitness::new_native_script(script);
+                    mint_builder.set_asset(&mint_witness, asset_name, amount);
+                } else {
+                    return Err(JsError::from_str(
+                        "Mint policy does not have a matching script",
+                    ));
+                }
+            }
+        }
+        self.mint = Some(mint_builder);
+        Ok(())
     }
 
     /// Set explicit Mint object and the required witnesses to this builder
     /// it will replace any previously existing mint and mint scripts
     /// NOTE! Error will be returned in case a mint policy does not have a matching script
-    pub fn set_mint(&mut self, mint: &Mint, mint_scripts: &NativeScripts) -> Result<(), JsError> {
-        if !self.minswap_mode {
-            assert_required_mint_scripts(mint, Some(mint_scripts))?;
-        }
-        self.mint = Some(mint.clone());
-        self.mint_scripts = Some(mint_scripts.clone());
-        Ok(())
-    }
 
+    // pub fn set_mint(&mut self, mint: &Mint, mint_scripts: &NativeScripts) -> Result<(), JsError> {
+    //     if !self.minswap_mode {
+    //         assert_required_mint_scripts(mint, Some(mint_scripts))?;
+    //     }
+    //     self.mint = Some(mint.clone());
+    //     self.mint_scripts = Some(mint_scripts.clone());
+    //     Ok(())
+    // }
+
+    /// !!! DEPRECATED !!!
+    /// Mints are defining by MintBuilder now.
+    /// Use `.get_mint_builder()` and `.build()` instead.
+    #[deprecated(
+        since = "11.2.0",
+        note = "Mints are defining by MintBuilder now. Use `.get_mint_builder()` and `.build()` instead."
+    )]
+    
     /// Returns a copy of the current mint state in the builder
     pub fn get_mint(&self) -> Option<Mint> {
-        self.mint.clone()
+        match &self.mint {
+            Some(mint) => Some(mint.build()),
+            None => None,
+        }
     }
 
     /// Returns a copy of the current mint witness scripts in the builder
     pub fn get_mint_scripts(&self) -> Option<NativeScripts> {
-        self.mint_scripts.clone()
+        match &self.mint {
+            Some(mint) => Some(mint.get_native_scripts()),
+            None => None,
+        }
     }
 
-    fn _set_mint_asset(
-        &mut self,
-        policy_id: &PolicyID,
-        policy_script: &NativeScript,
-        mint_assets: &MintAssets,
-    ) {
-        let mut mint = self.mint.as_ref().cloned().unwrap_or(Mint::new());
-        let is_new_policy = mint.insert(&policy_id, mint_assets).is_none();
-        let mint_scripts = {
-            let mut witness_scripts = self
-                .mint_scripts
-                .as_ref()
-                .cloned()
-                .unwrap_or(NativeScripts::new());
-            if is_new_policy {
-                // If policy has not been encountered before - insert the script into witnesses
-                witness_scripts.add(&policy_script.clone());
-            }
-            witness_scripts
-        };
-        self.mint = Some(mint);
-        self.mint_scripts = Some(mint_scripts.clone());
-    }
-
+    /// !!! DEPRECATED !!!
+    /// Mints are defining by MintBuilder now.
+    /// Use `.set_mint_builder()` and `MintBuilder` instead.
+    #[deprecated(
+    since = "11.2.0",
+    note = "Mints are defining by MintBuilder now. Use `.set_mint_builder()` and `MintBuilder` instead."
+    )]
     /// Add a mint entry to this builder using a PolicyID and MintAssets object
     /// It will be securely added to existing or new Mint in this builder
     /// It will replace any existing mint assets with the same PolicyID
     pub fn set_mint_asset(&mut self, policy_script: &NativeScript, mint_assets: &MintAssets) {
-        let policy_id: PolicyID = policy_script.hash();
-        self._set_mint_asset(&policy_id, policy_script, mint_assets);
-    }
-
-    fn _add_mint_asset(
-        &mut self,
-        policy_id: &PolicyID,
-        policy_script: &NativeScript,
-        asset_name: &AssetName,
-        amount: Int,
-    ) {
-        let mut asset = self
-            .mint
-            .as_ref()
-            .map(|m| m.get(&policy_id).as_ref().cloned())
-            .unwrap_or(None)
-            .unwrap_or(MintAssets::new());
-        if let Some(mint_amount) = asset.get(asset_name) {
-            let new_amount = mint_amount.0 + amount.0;
-            asset.insert(asset_name, Int(new_amount));
+        let mint_witness = MintWitness::new_native_script(policy_script);
+        if let Some(mint) = &mut self.mint {
+            for (asset, amount) in mint_assets.0.iter() {
+                mint.set_asset(&mint_witness, asset, amount);
+            }
         } else {
-            asset.insert(asset_name, amount);
+            let mut mint = MintBuilder::new();
+            for (asset, amount) in mint_assets.0.iter() {
+                mint.set_asset(&mint_witness, asset, amount);
+            }
+            self.mint = Some(mint);
         }
-        self._set_mint_asset(&policy_id, policy_script, &asset);
     }
 
+    /// !!! DEPRECATED !!!
+    /// Mints are defining by MintBuilder now.
+    /// Use `.set_mint_builder()` and `MintBuilder` instead.
+    #[deprecated(
+    since = "11.2.0",
+    note = "Mints are defining by MintBuilder now. Use `.set_mint_builder()` and `MintBuilder` instead."
+    )]
     /// Add a mint entry to this builder using a PolicyID, AssetName, and Int object for amount
     /// It will be securely added to existing or new Mint in this builder
     /// It will replace any previous existing amount same PolicyID and AssetName
@@ -1247,8 +1278,14 @@ impl TransactionBuilder {
         asset_name: &AssetName,
         amount: Int,
     ) {
-        let policy_id: PolicyID = policy_script.hash();
-        self._add_mint_asset(&policy_id, policy_script, asset_name, amount);
+        let mint_witness = MintWitness::new_native_script(policy_script);
+        if let Some(mint) = &mut self.mint {
+            mint.add_asset(&mint_witness, asset_name, &amount);
+        } else {
+            let mut mint =  MintBuilder::new();
+            mint.add_asset(&mint_witness, asset_name, &amount);
+            self.mint = Some(mint);
+        }
     }
 
     /// Add a mint entry together with an output to this builder
@@ -1267,7 +1304,7 @@ impl TransactionBuilder {
             return Err(JsError::from_str("Output value must be positive!"));
         }
         let policy_id: PolicyID = policy_script.hash();
-        self._add_mint_asset(&policy_id, policy_script, asset_name, amount.clone());
+        self.add_mint_asset(policy_script, asset_name, amount.clone());
         let multiasset = Mint::new_from_entry(
             &policy_id,
             &MintAssets::new_from_entry(asset_name, amount.clone()),
@@ -1297,7 +1334,7 @@ impl TransactionBuilder {
             return Err(JsError::from_str("Output value must be positive!"));
         }
         let policy_id: PolicyID = policy_script.hash();
-        self._add_mint_asset(&policy_id, policy_script, asset_name, amount.clone());
+        self.add_mint_asset(policy_script, asset_name, amount.clone());
         let multiasset = Mint::new_from_entry(
             &policy_id,
             &MintAssets::new_from_entry(asset_name, amount.clone()),
@@ -1327,7 +1364,6 @@ impl TransactionBuilder {
             auxiliary_data: None,
             validity_start_interval: None,
             mint: None,
-            mint_scripts: None,
             script_data_hash: None,
             required_signers: Ed25519KeyHashes::new(),
             collateral_return: None,
@@ -1344,6 +1380,12 @@ impl TransactionBuilder {
         let mut inputs = self.reference_inputs.clone();
         for input in self.inputs.get_ref_inputs().0 {
             inputs.insert(input);
+        }
+
+        if let Some(mint) = &self.mint {
+            for input in mint.get_ref_inputs().0 {
+                inputs.insert(input);
+            }
         }
 
         let vec_inputs = inputs.into_iter().collect();
@@ -1375,8 +1417,8 @@ impl TransactionBuilder {
             .as_ref()
             .map(|m| {
                 (
-                    Value::new_from_assets(&m.as_positive_multiasset()),
-                    Value::new_from_assets(&m.as_negative_multiasset()),
+                    Value::new_from_assets(&m.build().as_positive_multiasset()),
+                    Value::new_from_assets(&m.build().as_negative_multiasset()),
                 )
             })
             .unwrap_or((Value::zero(), Value::zero()))
@@ -1425,6 +1467,26 @@ impl TransactionBuilder {
     /// Editing inputs, outputs, mint, etc. after change been calculated
     /// might cause a mismatch in calculated fee versus the required fee
     pub fn add_change_if_needed(&mut self, address: &Address) -> Result<bool, JsError> {
+        self.add_change_if_needed_with_optional_script_and_datum(address, None, None)
+    }
+
+    pub fn add_change_if_needed_with_datum(&mut self,
+                                           address: &Address,
+                                           plutus_data: &OutputDatum)
+        -> Result<bool, JsError>
+    {
+        self.add_change_if_needed_with_optional_script_and_datum(
+            address,
+            Some(plutus_data.0.clone()),
+            None)
+    }
+
+
+    fn add_change_if_needed_with_optional_script_and_datum(&mut self, address: &Address,
+                                                           plutus_data: Option<DataOption>,
+                                                           script_ref: Option<ScriptRef>)
+        -> Result<bool, JsError>
+    {
         let fee = match &self.fee {
             None => self.min_fee(),
             // generating the change output involves changing the fee
@@ -1434,11 +1496,6 @@ impl TransactionBuilder {
                 ))
             }
         }?;
-
-        // note: can't add plutus data or data hash and script to change
-        // because we don't know how many change outputs will need to be created
-        let plutus_data: Option<DataOption> = None;
-        let script_ref: Option<ScriptRef> = None;
 
         let input_total = self.get_total_input()?;
         let output_total = self.get_total_output()?;
@@ -1507,6 +1564,7 @@ impl TransactionBuilder {
                             amount: base_coin.clone(),
                             plutus_data: plutus_data.clone(),
                             script_ref: script_ref.clone(),
+                            serialization_format: None,
                         };
                         // If this becomes slow on large TXs we can optimize it like the following
                         // to avoid cloning + reserializing the entire output.
@@ -1566,6 +1624,7 @@ impl TransactionBuilder {
                                         amount: base_coin.clone(),
                                         plutus_data: plutus_data.clone(),
                                         script_ref: script_ref.clone(),
+                                        serialization_format: None,
                                     };
 
                                     // 3. continue building the new output from the asset we stopped
@@ -1658,6 +1717,7 @@ impl TransactionBuilder {
                                 amount: change_value.clone(),
                                 plutus_data: plutus_data.clone(),
                                 script_ref: script_ref.clone(),
+                                serialization_format: None,
                             };
 
                             // increase fee
@@ -1679,6 +1739,7 @@ impl TransactionBuilder {
                             amount: change_left.clone(),
                             plutus_data: plutus_data.clone(),
                             script_ref: script_ref.clone(),
+                            serialization_format: None,
                         };
                         let additional_fee = self.fee_for_output(&pure_output)?;
                         let potential_pure_value =
@@ -1693,6 +1754,7 @@ impl TransactionBuilder {
                                 amount: potential_pure_value.clone(),
                                 plutus_data: plutus_data.clone(),
                                 script_ref: script_ref.clone(),
+                                serialization_format: None,
                             })?;
                         }
                     }
@@ -1740,6 +1802,7 @@ impl TransactionBuilder {
                                 amount: change_estimator.clone(),
                                 plutus_data: plutus_data.clone(),
                                 script_ref: script_ref.clone(),
+                                serialization_format: None,
                             })?;
 
                             let new_fee = fee.checked_add(&fee_for_change)?;
@@ -1757,6 +1820,7 @@ impl TransactionBuilder {
                                             .checked_sub(&Value::new(&new_fee.clone()))?,
                                         plutus_data: plutus_data.clone(),
                                         script_ref: script_ref.clone(),
+                                        serialization_format: None,
                                     })?;
 
                                     Ok(true)
@@ -1772,6 +1836,7 @@ impl TransactionBuilder {
         }
     }
 
+
     /// This method will calculate the script hash data
     /// using the plutus datums and redeemers already present in the builder
     /// along with the provided cost model, and will register the calculated value
@@ -1782,28 +1847,41 @@ impl TransactionBuilder {
     /// and will assert and require for a corresponding cost-model to be present in the passed map.
     /// Only the cost-models for the present language versions will be used in the hash calculation.
     pub fn calc_script_data_hash(&mut self, cost_models: &Costmdls) -> Result<(), JsError> {
+        let mut used_langs = BTreeSet::new();
         let mut retained_cost_models = Costmdls::new();
-        if let Some(pw) = self.inputs.get_plutus_input_scripts() {
-            let (scripts, datums, redeemers) = pw.collect();
-            for lang in Languages::list().0 {
-                if scripts.has_version(&lang) {
-                    match cost_models.get(&lang) {
-                        Some(cost) => {
-                            retained_cost_models.insert(&lang, &cost);
-                        }
-                        _ => {
-                            return Err(JsError::from_str(&format!(
-                                "Missing cost model for language version: {:?}",
-                                lang
-                            )))
-                        }
+        let mut plutus_witnesses = PlutusWitnesses::new();
+        if let Some(mut inputs_plutus) = self.inputs.get_plutus_input_scripts() {
+            used_langs.append(&mut self.inputs.get_used_plutus_lang_versions());
+            plutus_witnesses.0.append(&mut inputs_plutus.0)
+        }
+        if let Some(mut collateral_plutus) = self.collateral.get_plutus_input_scripts() {
+            used_langs.append(&mut self.collateral.get_used_plutus_lang_versions());
+            plutus_witnesses.0.append(&mut collateral_plutus.0)
+        }
+        if let Some(mint_builder) = &self.mint {
+            used_langs.append(&mut mint_builder.get_used_plutus_lang_versions());
+            plutus_witnesses.0.append(&mut mint_builder.get_plutus_witnesses().0)
+        }
+
+        if plutus_witnesses.len() > 0 {
+            let (_scripts, datums, redeemers) = plutus_witnesses.collect();
+            for lang in used_langs {
+                match cost_models.get(&lang) {
+                    Some(cost) => {
+                        retained_cost_models.insert(&lang, &cost);
+                    }
+                    _ => {
+                        return Err(JsError::from_str(&format!(
+                            "Missing cost model for language version: {:?}",
+                            lang
+                        )))
                     }
                 }
             }
             self.script_data_hash = Some(hash_script_data(
                 &redeemers,
                 &retained_cost_models,
-                Some(datums),
+                datums,
             ));
         }
         Ok(())
@@ -1843,7 +1921,10 @@ impl TransactionBuilder {
                 Some(x) => Some(utils::hash_auxiliary_data(x)),
             },
             validity_start_interval: self.validity_start_interval,
-            mint: self.mint.clone(),
+            mint: match &self.mint {
+                None => None,
+                Some(mint_builder) => Some(mint_builder.build()),
+            },
             script_data_hash: self.script_data_hash.clone(),
             collateral: self.collateral.inputs_option(),
             required_signers: self.required_signers.to_option(),
@@ -1901,8 +1982,8 @@ impl TransactionBuilder {
                 ns.add(s);
             });
         }
-        if let Some(mint_scripts) = &self.mint_scripts {
-            mint_scripts.0.iter().for_each(|s| {
+        if let Some(mint_builder) = &self.mint {
+            mint_builder.get_native_scripts().0.iter().for_each(|s| {
                 ns.add(s);
             });
         }
@@ -1922,6 +2003,11 @@ impl TransactionBuilder {
         }
         if let Some(scripts) = self.collateral.get_plutus_input_scripts() {
             scripts.0.iter().for_each(|s| {
+                res.add(s);
+            })
+        }
+        if let Some(mint_builder) = &self.mint {
+            mint_builder.get_plutus_witnesses().0.iter().for_each(|s| {
                 res.add(s);
             })
         }
@@ -1955,7 +2041,9 @@ impl TransactionBuilder {
             if let Some(pw) = self.get_combined_plutus_scripts() {
                 let (scripts, datums, redeemers) = pw.collect();
                 wit.set_plutus_scripts(&scripts);
-                wit.set_plutus_data(&datums);
+                if let Some(datums) = &datums {
+                    wit.set_plutus_data(datums);
+                }
                 wit.set_redeemers(&redeemers);
             }
         }
@@ -1963,7 +2051,9 @@ impl TransactionBuilder {
     }
 
     fn has_plutus_inputs(&self) -> bool {
-        self.inputs.get_plutus_input_scripts().is_some()
+        let has_in_inputs = self.inputs.get_plutus_input_scripts().is_some();
+        let has_in_mint = self.mint.as_ref().map_or(false, |m| m.has_plutus_scripts());
+        return has_in_inputs || has_in_mint;
     }
 
     /// Returns full Transaction object with the body and the auxiliary data
@@ -2009,19 +2099,19 @@ impl TransactionBuilder {
         self_copy.set_fee(&to_bignum(0x1_00_00_00_00));
         min_fee(&self_copy)
     }
-
-    pub fn fake_tx_full_size(&self) -> Result<usize, JsError> {
-        let mut self_copy = self.clone();
-        self_copy.set_fee(&to_bignum(0x1_00_00_00_00));
-        Ok(self_copy.build_and_size()?.1)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::output_builder::TransactionOutputBuilder;
     use super::*;
-    use crate::fakes::{fake_base_address, fake_bytes_32, fake_key_hash, fake_policy_id, fake_tx_hash, fake_tx_input, fake_tx_input2, fake_value, fake_value2};
+    use crate::fakes::{
+        fake_base_address, fake_bytes_32, fake_data_hash, fake_key_hash, fake_policy_id,
+        fake_tx_hash, fake_tx_input, fake_tx_input2, fake_value, fake_value2,
+    };
+    use crate::tx_builder::tx_inputs_builder::{
+        InputWithScriptWitness, InputsWithScriptWitness, PlutusScriptSource,
+    };
     use crate::tx_builder_constants::TxBuilderConstants;
     use fees::*;
 
@@ -2230,6 +2320,87 @@ mod tests {
         );
         assert_eq!(tx_builder.full_size().unwrap(), 285);
         assert_eq!(tx_builder.output_sizes(), vec![62, 65]);
+        let _final_tx = tx_builder.build(); // just test that it doesn't throw
+    }
+
+    #[test]
+    fn build_tx_with_change_with_datum() {
+        let mut tx_builder = create_default_tx_builder();
+        let spend = root_key_15()
+            .derive(harden(1852))
+            .derive(harden(1815))
+            .derive(harden(0))
+            .derive(0)
+            .derive(0)
+            .to_public();
+        let change_key = root_key_15()
+            .derive(harden(1852))
+            .derive(harden(1815))
+            .derive(harden(0))
+            .derive(1)
+            .derive(0)
+            .to_public();
+        let stake = root_key_15()
+            .derive(harden(1852))
+            .derive(harden(1815))
+            .derive(harden(0))
+            .derive(2)
+            .derive(0)
+            .to_public();
+
+        let spend_cred = StakeCredential::from_keyhash(&spend.to_raw_key().hash());
+        let stake_cred = StakeCredential::from_keyhash(&stake.to_raw_key().hash());
+        let addr_net_0 = BaseAddress::new(
+            NetworkInfo::testnet().network_id(),
+            &spend_cred,
+            &stake_cred,
+        )
+            .to_address();
+        tx_builder.add_key_input(
+            &spend.to_raw_key().hash(),
+            &TransactionInput::new(&genesis_id(), 0),
+            &Value::new(&to_bignum(1_000_000)),
+        );
+        tx_builder
+            .add_output(
+                &TransactionOutputBuilder::new()
+                    .with_address(&addr_net_0)
+                    .next()
+                    .unwrap()
+                    .with_coin(&to_bignum(222))
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        tx_builder.set_ttl(1000);
+
+        let datum_hash = fake_data_hash(20);
+        let data_option = OutputDatum::new_data_hash(&datum_hash);
+        let (_, script_hash) = plutus_script_and_hash(15);
+        let change_cred = StakeCredential::from_scripthash(&script_hash);
+        let change_addr = BaseAddress::new(
+            NetworkInfo::testnet().network_id(),
+            &change_cred,
+            &stake_cred,
+        )
+            .to_address();
+        let added_change = tx_builder.add_change_if_needed_with_datum(&change_addr, &data_option);
+        assert!(added_change.unwrap());
+        assert_eq!(tx_builder.outputs.len(), 2);
+        assert_eq!(
+            tx_builder
+                .get_explicit_input()
+                .unwrap()
+                .checked_add(&tx_builder.get_implicit_input().unwrap())
+                .unwrap(),
+            tx_builder
+                .get_explicit_output()
+                .unwrap()
+                .checked_add(&Value::new(&tx_builder.get_fee_if_set().unwrap()))
+                .unwrap()
+        );
+        assert_eq!(tx_builder.full_size().unwrap(), 319);
+        assert_eq!(tx_builder.output_sizes(), vec![62, 99]);
         let _final_tx = tx_builder.build(); // just test that it doesn't throw
     }
 
@@ -4689,6 +4860,14 @@ mod tests {
         assert_eq!(_deser_t.to_bytes(), _final_tx.to_bytes());
     }
 
+    fn build_full_tx(
+        body: &TransactionBody,
+        witness_set: &TransactionWitnessSet,
+        auxiliary_data: Option<AuxiliaryData>,
+    ) -> Transaction {
+        return Transaction::new(body, witness_set, auxiliary_data);
+    }
+
     #[test]
     fn build_tx_multisig_spend_1on1_unsigned() {
         let mut tx_builder = create_tx_builder_with_fee(&create_linear_fee(10, 2));
@@ -4879,7 +5058,7 @@ mod tests {
         ));
         witness_set.set_vkeys(&vkw);
 
-        let _final_tx = Transaction::new(&body, &witness_set);
+        let _final_tx = build_full_tx(&body, &witness_set, None);
         let _deser_t = Transaction::from_bytes(_final_tx.to_bytes()).unwrap();
         assert_eq!(_deser_t.to_bytes(), _final_tx.to_bytes());
         assert_eq!(
@@ -5217,10 +5396,10 @@ mod tests {
         tx_builder.set_mint_asset(&mint_script, &create_mint_asset());
 
         assert!(tx_builder.mint.is_some());
-        assert!(tx_builder.mint_scripts.is_some());
+        let mint_scripts = tx_builder.mint.as_ref().unwrap().get_native_scripts();
+        assert!(mint_scripts.len() > 0);
 
-        let mint = tx_builder.mint.unwrap();
-        let mint_scripts = tx_builder.mint_scripts.unwrap();
+        let mint = tx_builder.mint.unwrap().build();
 
         assert_eq!(mint.len(), 1);
         assert_mint_asset(&mint, &policy_id);
@@ -5246,10 +5425,10 @@ mod tests {
         tx_builder.set_mint_asset(&mint_script2, &create_mint_asset());
 
         assert!(tx_builder.mint.is_some());
-        assert!(tx_builder.mint_scripts.is_some());
+        let mint_scripts = tx_builder.mint.as_ref().unwrap().get_native_scripts();
+        assert!(mint_scripts.len() > 0);
 
-        let mint = tx_builder.mint.unwrap();
-        let mint_scripts = tx_builder.mint_scripts.unwrap();
+        let mint = tx_builder.mint.unwrap().build();
 
         assert_eq!(mint.len(), 2);
         assert_mint_asset(&mint, &policy_id1);
@@ -5257,8 +5436,9 @@ mod tests {
 
         // Only second script is present in the scripts
         assert_eq!(mint_scripts.len(), 2);
-        assert_eq!(mint_scripts.get(0), mint_script1);
-        assert_eq!(mint_scripts.get(1), mint_script2);
+        let actual_scripts = mint_scripts.0.iter().cloned().collect::<BTreeSet<NativeScript>>();
+        let expected_scripts = vec![mint_script1, mint_script2].iter().cloned().collect::<BTreeSet<NativeScript>>();
+        assert_eq!(actual_scripts, expected_scripts);
     }
 
     #[test]
@@ -5270,10 +5450,10 @@ mod tests {
         tx_builder.add_mint_asset(&mint_script, &create_asset_name(), Int::new_i32(1234));
 
         assert!(tx_builder.mint.is_some());
-        assert!(tx_builder.mint_scripts.is_some());
+        let mint_scripts = tx_builder.mint.as_ref().unwrap().get_native_scripts();
+        assert!(mint_scripts.len() > 0);
 
-        let mint = tx_builder.mint.unwrap();
-        let mint_scripts = tx_builder.mint_scripts.unwrap();
+        let mint = tx_builder.mint.unwrap().build();
 
         assert_eq!(mint.len(), 1);
         assert_mint_asset(&mint, &policy_id);
@@ -5298,18 +5478,19 @@ mod tests {
         tx_builder.add_mint_asset(&mint_script2, &create_asset_name(), Int::new_i32(1234));
 
         assert!(tx_builder.mint.is_some());
-        assert!(tx_builder.mint_scripts.is_some());
+        let mint_scripts = tx_builder.mint.as_ref().unwrap().get_native_scripts();
+        assert!(mint_scripts.len() > 0);
 
-        let mint = tx_builder.mint.unwrap();
-        let mint_scripts = tx_builder.mint_scripts.unwrap();
+        let mint = tx_builder.mint.unwrap().build();
 
         assert_eq!(mint.len(), 2);
         assert_mint_asset(&mint, &policy_id1);
         assert_mint_asset(&mint, &policy_id2);
 
         assert_eq!(mint_scripts.len(), 2);
-        assert_eq!(mint_scripts.get(0), mint_script1);
-        assert_eq!(mint_scripts.get(1), mint_script2);
+        let actual_scripts = mint_scripts.0.iter().cloned().collect::<BTreeSet<NativeScript>>();
+        let expected_scripts = vec![mint_script1, mint_script2].iter().cloned().collect::<BTreeSet<NativeScript>>();
+        assert_eq!(actual_scripts, expected_scripts);
     }
 
     #[test]
@@ -5460,10 +5641,10 @@ mod tests {
             .unwrap();
 
         assert!(tx_builder.mint.is_some());
-        assert!(tx_builder.mint_scripts.is_some());
+        let mint_scripts = &tx_builder.mint.as_ref().unwrap().get_native_scripts();
+        assert!(mint_scripts.len() > 0);
 
-        let mint = tx_builder.mint.as_ref().unwrap();
-        let mint_scripts = tx_builder.mint_scripts.as_ref().unwrap();
+        let mint = &tx_builder.mint.unwrap().build();
 
         // Mint contains two entries
         assert_eq!(mint.len(), 2);
@@ -5471,8 +5652,9 @@ mod tests {
         assert_mint_asset(mint, &policy_id1);
 
         assert_eq!(mint_scripts.len(), 2);
-        assert_eq!(mint_scripts.get(0), mint_script0);
-        assert_eq!(mint_scripts.get(1), mint_script1);
+        let actual_scripts = mint_scripts.0.iter().cloned().collect::<BTreeSet<NativeScript>>();
+        let expected_scripts = vec![mint_script0, mint_script1].iter().cloned().collect::<BTreeSet<NativeScript>>();
+        assert_eq!(actual_scripts, expected_scripts);
 
         // One new output is created
         assert_eq!(tx_builder.outputs.len(), 1);
@@ -5521,10 +5703,10 @@ mod tests {
             .unwrap();
 
         assert!(tx_builder.mint.is_some());
-        assert!(tx_builder.mint_scripts.is_some());
+        let mint_scripts = tx_builder.mint.as_ref().unwrap().get_native_scripts();
+        assert!(mint_scripts.len() > 0);
 
-        let mint = tx_builder.mint.as_ref().unwrap();
-        let mint_scripts = tx_builder.mint_scripts.as_ref().unwrap();
+        let mint = &tx_builder.mint.unwrap().build();
 
         // Mint contains two entries
         assert_eq!(mint.len(), 2);
@@ -5532,8 +5714,9 @@ mod tests {
         assert_mint_asset(mint, &policy_id1);
 
         assert_eq!(mint_scripts.len(), 2);
-        assert_eq!(mint_scripts.get(0), mint_script0);
-        assert_eq!(mint_scripts.get(1), mint_script1);
+        let actual_scripts = mint_scripts.0.iter().cloned().collect::<BTreeSet<NativeScript>>();
+        let expected_scripts = vec![mint_script0, mint_script1].iter().cloned().collect::<BTreeSet<NativeScript>>();
+        assert_eq!(actual_scripts, expected_scripts);
 
         // One new output is created
         assert_eq!(tx_builder.outputs.len(), 1);
@@ -6197,9 +6380,12 @@ mod tests {
         let res2 = tx_builder.build_tx();
         assert!(res2.is_ok());
 
+        let mut used_langs = Languages::new();
+        used_langs.add(Language::new_plutus_v1());
+
         let data_hash = hash_script_data(
             &Redeemers::from(vec![redeemer.clone()]),
-            &TxBuilderConstants::plutus_default_cost_models(),
+            &TxBuilderConstants::plutus_default_cost_models().retain_language_versions(&used_langs),
             Some(PlutusList::from(vec![datum])),
         );
         assert_eq!(tx_builder.script_data_hash.unwrap(), data_hash);
@@ -7707,10 +7893,434 @@ mod tests {
   },
   \"script_ref\": null
 }").unwrap();
-        let addr= Address::from_bech32("addr_test1wpv93hm9sqx0ar7pgxwl9jn3xt6lwmxxy27zd932slzvghqg8fe0n").unwrap();
         let mut builder = create_reallistic_tx_builder();
-        builder.add_output(&output);
+        builder.add_output(&output).unwrap();
         let res = builder.add_inputs_from(&utoxs, CoinSelectionStrategyCIP2::RandomImproveMultiAsset);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn plutus_mint_test() {
+        let mut tx_builder = create_reallistic_tx_builder();
+        let colateral_adress = Address::from_bech32("addr_test1qpu5vlrf4xkxv2qpwngf6cjhtw542ayty80v8dyr49rf5ewvxwdrt70qlcpeeagscasafhffqsxy36t90ldv06wqrk2qum8x5w").unwrap();
+        let colateral_input = TransactionInput::from_json("\
+          {
+            \"transaction_id\": \"69b0b867056a2d4fdc3827e23aa7069b125935e2def774941ca8cc7f9e0de774\",
+            \"index\": 1
+          }").unwrap();
+
+        let tx_input = TransactionInput::from_json("\
+          {
+            \"transaction_id\": \"f58a5bc761b1efdcf4b5684f6ad5495854a0d64b866e2f0f525d134750d3511b\",
+            \"index\": 1
+          }").unwrap();
+        let plutus_script = plutus::PlutusScript::from_hex("5907d2010000332323232323232323232323232323322323232323222232325335332201b3333573466e1cd55ce9baa0044800080608c98c8060cd5ce00c80c00b1999ab9a3370e6aae7540092000233221233001003002323232323232323232323232323333573466e1cd55cea8062400046666666666664444444444442466666666666600201a01801601401201000e00c00a00800600466a02a02c6ae854030cd4054058d5d0a80599a80a80b9aba1500a3335501975ca0306ae854024ccd54065d7280c1aba1500833501502035742a00e666aa032042eb4d5d0a8031919191999ab9a3370e6aae75400920002332212330010030023232323333573466e1cd55cea8012400046644246600200600466a056eb4d5d0a80118161aba135744a004464c6405c66ae700bc0b80b04d55cf280089baa00135742a0046464646666ae68cdc39aab9d5002480008cc8848cc00400c008cd40add69aba15002302c357426ae8940088c98c80b8cd5ce01781701609aab9e5001137540026ae84d5d1280111931901519ab9c02b02a028135573ca00226ea8004d5d0a80299a80abae35742a008666aa03203a40026ae85400cccd54065d710009aba15002301f357426ae8940088c98c8098cd5ce01381301209aba25001135744a00226ae8940044d5d1280089aba25001135744a00226ae8940044d5d1280089aba25001135744a00226aae7940044dd50009aba15002300f357426ae8940088c98c8060cd5ce00c80c00b080b89931900b99ab9c4910350543500017135573ca00226ea800448c88c008dd6000990009aa80a911999aab9f0012500a233500930043574200460066ae880080508c8c8cccd5cd19b8735573aa004900011991091980080180118061aba150023005357426ae8940088c98c8050cd5ce00a80a00909aab9e5001137540024646464646666ae68cdc39aab9d5004480008cccc888848cccc00401401000c008c8c8c8cccd5cd19b8735573aa0049000119910919800801801180a9aba1500233500f014357426ae8940088c98c8064cd5ce00d00c80b89aab9e5001137540026ae854010ccd54021d728039aba150033232323333573466e1d4005200423212223002004357426aae79400c8cccd5cd19b875002480088c84888c004010dd71aba135573ca00846666ae68cdc3a801a400042444006464c6403666ae7007006c06406005c4d55cea80089baa00135742a00466a016eb8d5d09aba2500223263201533573802c02a02626ae8940044d5d1280089aab9e500113754002266aa002eb9d6889119118011bab00132001355012223233335573e0044a010466a00e66442466002006004600c6aae754008c014d55cf280118021aba200301213574200222440042442446600200800624464646666ae68cdc3a800a40004642446004006600a6ae84d55cf280191999ab9a3370ea0049001109100091931900819ab9c01101000e00d135573aa00226ea80048c8c8cccd5cd19b875001480188c848888c010014c01cd5d09aab9e500323333573466e1d400920042321222230020053009357426aae7940108cccd5cd19b875003480088c848888c004014c01cd5d09aab9e500523333573466e1d40112000232122223003005375c6ae84d55cf280311931900819ab9c01101000e00d00c00b135573aa00226ea80048c8c8cccd5cd19b8735573aa004900011991091980080180118029aba15002375a6ae84d5d1280111931900619ab9c00d00c00a135573ca00226ea80048c8cccd5cd19b8735573aa002900011bae357426aae7940088c98c8028cd5ce00580500409baa001232323232323333573466e1d4005200c21222222200323333573466e1d4009200a21222222200423333573466e1d400d2008233221222222233001009008375c6ae854014dd69aba135744a00a46666ae68cdc3a8022400c4664424444444660040120106eb8d5d0a8039bae357426ae89401c8cccd5cd19b875005480108cc8848888888cc018024020c030d5d0a8049bae357426ae8940248cccd5cd19b875006480088c848888888c01c020c034d5d09aab9e500b23333573466e1d401d2000232122222223005008300e357426aae7940308c98c804ccd5ce00a00980880800780700680600589aab9d5004135573ca00626aae7940084d55cf280089baa0012323232323333573466e1d400520022333222122333001005004003375a6ae854010dd69aba15003375a6ae84d5d1280191999ab9a3370ea0049000119091180100198041aba135573ca00c464c6401866ae700340300280244d55cea80189aba25001135573ca00226ea80048c8c8cccd5cd19b875001480088c8488c00400cdd71aba135573ca00646666ae68cdc3a8012400046424460040066eb8d5d09aab9e500423263200933573801401200e00c26aae7540044dd500089119191999ab9a3370ea00290021091100091999ab9a3370ea00490011190911180180218031aba135573ca00846666ae68cdc3a801a400042444004464c6401466ae7002c02802001c0184d55cea80089baa0012323333573466e1d40052002200723333573466e1d40092000212200123263200633573800e00c00800626aae74dd5000a4c24002920103505431001220021123230010012233003300200200133351222335122335004335500248811c2b194b7d10a3d2d3152c5f3a628ff50cb9fc11e59453e8ac7a1aea4500488104544e4654005005112212330010030021120011122002122122330010040031200101").unwrap();
+        let redeemer = Redeemer::from_json("\
+         {
+            \"tag\": \"Mint\",
+            \"index\": \"0\",
+            \"data\": \"{\\\"constructor\\\":0,\\\"fields\\\":[]}\",
+            \"ex_units\": {
+              \"mem\": \"1042996\",
+              \"steps\": \"446100241\"
+            }
+          }").unwrap();
+        let asset_name = AssetName::from_hex("44544e4654").unwrap();
+        let mut mint_builder = MintBuilder::new();
+        let plutus_script_source = PlutusScriptSource::new(&plutus_script);
+        let mint_witnes = MintWitness::new_plutus_script(&plutus_script_source, &redeemer);
+        mint_builder.add_asset(&mint_witnes, &asset_name, &Int::new(&BigNum::from(100u64)));
+
+        let output_adress = Address::from_bech32("addr_test1qpm5njmgzf4t7225v6j34wl30xfrufzt3jtqtdzf3en9ahpmnhtmynpasyc8fq75zv0uaj86vzsr7g3g8q5ypgu5fwtqr9zsgj").unwrap();
+        let mut output_assets = MultiAsset::new();
+        let mut asset = Assets::new();
+        asset.insert(&asset_name, &BigNum::from(100u64));
+        output_assets.insert(&plutus_script.hash(), &asset);
+        let output_value = Value::new_with_assets(&Coin::from(50000u64), &output_assets);
+        let output = TransactionOutput::new(&output_adress, &output_value);
+
+        let mut col_builder = TxInputsBuilder::new();
+        col_builder.add_input(&colateral_adress, &colateral_input, &Value::new(&Coin::from(1000000000u64)));
+        tx_builder.set_collateral(&col_builder);
+        tx_builder.add_output(&output);
+        tx_builder.add_input(&output_adress, &tx_input, &Value::new(&BigNum::from(100000000000u64)));
+        tx_builder.set_mint_builder(&mint_builder);
+
+        tx_builder.calc_script_data_hash(&TxBuilderConstants::plutus_vasil_cost_models()).unwrap();
+
+        let change_res = tx_builder.add_change_if_needed(&output_adress);
+        assert!(change_res.is_ok());
+
+        let build_res = tx_builder.build_tx();
+        assert!(build_res.is_ok());
+
+        assert!(mint_builder.get_plutus_witnesses().len() == 1);
+
+        let tx = build_res.unwrap();
+        assert!(tx.body.mint.is_some());
+        assert_eq!(tx.body.mint.unwrap().0.iter().next().unwrap().0, plutus_script.hash());
+    }
+
+    #[test]
+    fn plutus_mint_with_script_ref_test() {
+        let mut tx_builder = create_reallistic_tx_builder();
+        let colateral_adress = Address::from_bech32("addr_test1qpu5vlrf4xkxv2qpwngf6cjhtw542ayty80v8dyr49rf5ewvxwdrt70qlcpeeagscasafhffqsxy36t90ldv06wqrk2qum8x5w").unwrap();
+        let colateral_input = TransactionInput::from_json("\
+          {
+            \"transaction_id\": \"69b0b867056a2d4fdc3827e23aa7069b125935e2def774941ca8cc7f9e0de774\",
+            \"index\": 1
+          }").unwrap();
+
+        let tx_input = TransactionInput::from_json("\
+          {
+            \"transaction_id\": \"f58a5bc761b1efdcf4b5684f6ad5495854a0d64b866e2f0f525d134750d3511b\",
+            \"index\": 1
+          }").unwrap();
+        let tx_input_ref = TransactionInput::from_json("\
+          {
+            \"transaction_id\": \"f58a5bc7adaadadcf4b5684f6ad5495854a0d64b866e2f0f525d134750d3511b\",
+            \"index\": 2
+          }").unwrap();
+        let plutus_script = plutus::PlutusScript::from_hex("5907d2010000332323232323232323232323232323322323232323222232325335332201b3333573466e1cd55ce9baa0044800080608c98c8060cd5ce00c80c00b1999ab9a3370e6aae7540092000233221233001003002323232323232323232323232323333573466e1cd55cea8062400046666666666664444444444442466666666666600201a01801601401201000e00c00a00800600466a02a02c6ae854030cd4054058d5d0a80599a80a80b9aba1500a3335501975ca0306ae854024ccd54065d7280c1aba1500833501502035742a00e666aa032042eb4d5d0a8031919191999ab9a3370e6aae75400920002332212330010030023232323333573466e1cd55cea8012400046644246600200600466a056eb4d5d0a80118161aba135744a004464c6405c66ae700bc0b80b04d55cf280089baa00135742a0046464646666ae68cdc39aab9d5002480008cc8848cc00400c008cd40add69aba15002302c357426ae8940088c98c80b8cd5ce01781701609aab9e5001137540026ae84d5d1280111931901519ab9c02b02a028135573ca00226ea8004d5d0a80299a80abae35742a008666aa03203a40026ae85400cccd54065d710009aba15002301f357426ae8940088c98c8098cd5ce01381301209aba25001135744a00226ae8940044d5d1280089aba25001135744a00226ae8940044d5d1280089aba25001135744a00226aae7940044dd50009aba15002300f357426ae8940088c98c8060cd5ce00c80c00b080b89931900b99ab9c4910350543500017135573ca00226ea800448c88c008dd6000990009aa80a911999aab9f0012500a233500930043574200460066ae880080508c8c8cccd5cd19b8735573aa004900011991091980080180118061aba150023005357426ae8940088c98c8050cd5ce00a80a00909aab9e5001137540024646464646666ae68cdc39aab9d5004480008cccc888848cccc00401401000c008c8c8c8cccd5cd19b8735573aa0049000119910919800801801180a9aba1500233500f014357426ae8940088c98c8064cd5ce00d00c80b89aab9e5001137540026ae854010ccd54021d728039aba150033232323333573466e1d4005200423212223002004357426aae79400c8cccd5cd19b875002480088c84888c004010dd71aba135573ca00846666ae68cdc3a801a400042444006464c6403666ae7007006c06406005c4d55cea80089baa00135742a00466a016eb8d5d09aba2500223263201533573802c02a02626ae8940044d5d1280089aab9e500113754002266aa002eb9d6889119118011bab00132001355012223233335573e0044a010466a00e66442466002006004600c6aae754008c014d55cf280118021aba200301213574200222440042442446600200800624464646666ae68cdc3a800a40004642446004006600a6ae84d55cf280191999ab9a3370ea0049001109100091931900819ab9c01101000e00d135573aa00226ea80048c8c8cccd5cd19b875001480188c848888c010014c01cd5d09aab9e500323333573466e1d400920042321222230020053009357426aae7940108cccd5cd19b875003480088c848888c004014c01cd5d09aab9e500523333573466e1d40112000232122223003005375c6ae84d55cf280311931900819ab9c01101000e00d00c00b135573aa00226ea80048c8c8cccd5cd19b8735573aa004900011991091980080180118029aba15002375a6ae84d5d1280111931900619ab9c00d00c00a135573ca00226ea80048c8cccd5cd19b8735573aa002900011bae357426aae7940088c98c8028cd5ce00580500409baa001232323232323333573466e1d4005200c21222222200323333573466e1d4009200a21222222200423333573466e1d400d2008233221222222233001009008375c6ae854014dd69aba135744a00a46666ae68cdc3a8022400c4664424444444660040120106eb8d5d0a8039bae357426ae89401c8cccd5cd19b875005480108cc8848888888cc018024020c030d5d0a8049bae357426ae8940248cccd5cd19b875006480088c848888888c01c020c034d5d09aab9e500b23333573466e1d401d2000232122222223005008300e357426aae7940308c98c804ccd5ce00a00980880800780700680600589aab9d5004135573ca00626aae7940084d55cf280089baa0012323232323333573466e1d400520022333222122333001005004003375a6ae854010dd69aba15003375a6ae84d5d1280191999ab9a3370ea0049000119091180100198041aba135573ca00c464c6401866ae700340300280244d55cea80189aba25001135573ca00226ea80048c8c8cccd5cd19b875001480088c8488c00400cdd71aba135573ca00646666ae68cdc3a8012400046424460040066eb8d5d09aab9e500423263200933573801401200e00c26aae7540044dd500089119191999ab9a3370ea00290021091100091999ab9a3370ea00490011190911180180218031aba135573ca00846666ae68cdc3a801a400042444004464c6401466ae7002c02802001c0184d55cea80089baa0012323333573466e1d40052002200723333573466e1d40092000212200123263200633573800e00c00800626aae74dd5000a4c24002920103505431001220021123230010012233003300200200133351222335122335004335500248811c2b194b7d10a3d2d3152c5f3a628ff50cb9fc11e59453e8ac7a1aea4500488104544e4654005005112212330010030021120011122002122122330010040031200101").unwrap();
+        let plutus_script2 = plutus::PlutusScript::from_hex("5907adaada00332323232323232323232323232323322323232323222232325335332201b3333573466e1cd55ce9baa0044800080608c98c8060cd5ce00c80c00b1999ab9a3370e6aae7540092000233221233001003002323232323232323232323232323333573466e1cd55cea8062400046666666666664444444444442466666666666600201a01801601401201000e00c00a00800600466a02a02c6ae854030cd4054058d5d0a80599a80a80b9aba1500a3335501975ca0306ae854024ccd54065d7280c1aba1500833501502035742a00e666aa032042eb4d5d0a8031919191999ab9a3370e6aae75400920002332212330010030023232323333573466e1cd55cea8012400046644246600200600466a056eb4d5d0a80118161aba135744a004464c6405c66ae700bc0b80b04d55cf280089baa00135742a0046464646666ae68cdc39aab9d5002480008cc8848cc00400c008cd40add69aba15002302c357426ae8940088c98c80b8cd5ce01781701609aab9e5001137540026ae84d5d1280111931901519ab9c02b02a028135573ca00226ea8004d5d0a80299a80abae35742a008666aa03203a40026ae85400cccd54065d710009aba15002301f357426ae8940088c98c8098cd5ce01381301209aba25001135744a00226ae8940044d5d1280089aba25001135744a00226ae8940044d5d1280089aba25001135744a00226aae7940044dd50009aba15002300f357426ae8940088c98c8060cd5ce00c80c00b080b89931900b99ab9c4910350543500017135573ca00226ea800448c88c008dd6000990009aa80a911999aab9f0012500a233500930043574200460066ae880080508c8c8cccd5cd19b8735573aa004900011991091980080180118061aba150023005357426ae8940088c98c8050cd5ce00a80a00909aab9e5001137540024646464646666ae68cdc39aab9d5004480008cccc888848cccc00401401000c008c8c8c8cccd5cd19b8735573aa0049000119910919800801801180a9aba1500233500f014357426ae8940088c98c8064cd5ce00d00c80b89aab9e5001137540026ae854010ccd54021d728039aba150033232323333573466e1d4005200423212223002004357426aae79400c8cccd5cd19b875002480088c84888c004010dd71aba135573ca00846666ae68cdc3a801a400042444006464c6403666ae7007006c06406005c4d55cea80089baa00135742a00466a016eb8d5d09aba2500223263201533573802c02a02626ae8940044d5d1280089aab9e500113754002266aa002eb9d6889119118011bab00132001355012223233335573e0044a010466a00e66442466002006004600c6aae754008c014d55cf280118021aba200301213574200222440042442446600200800624464646666ae68cdc3a800a40004642446004006600a6ae84d55cf280191999ab9a3370ea0049001109100091931900819ab9c01101000e00d135573aa00226ea80048c8c8cccd5cd19b875001480188c848888c010014c01cd5d09aab9e500323333573466e1d400920042321222230020053009357426aae7940108cccd5cd19b875003480088c848888c004014c01cd5d09aab9e500523333573466e1d40112000232122223003005375c6ae84d55cf280311931900819ab9c01101000e00d00c00b135573aa00226ea80048c8c8cccd5cd19b8735573aa004900011991091980080180118029aba15002375a6ae84d5d1280111931900619ab9c00d00c00a135573ca00226ea80048c8cccd5cd19b8735573aa002900011bae357426aae7940088c98c8028cd5ce00580500409baa001232323232323333573466e1d4005200c21222222200323333573466e1d4009200a21222222200423333573466e1d400d2008233221222222233001009008375c6ae854014dd69aba135744a00a46666ae68cdc3a8022400c4664424444444660040120106eb8d5d0a8039bae357426ae89401c8cccd5cd19b875005480108cc8848888888cc018024020c030d5d0a8049bae357426ae8940248cccd5cd19b875006480088c848888888c01c020c034d5d09aab9e500b23333573466e1d401d2000232122222223005008300e357426aae7940308c98c804ccd5ce00a00980880800780700680600589aab9d5004135573ca00626aae7940084d55cf280089baa0012323232323333573466e1d400520022333222122333001005004003375a6ae854010dd69aba15003375a6ae84d5d1280191999ab9a3370ea0049000119091180100198041aba135573ca00c464c6401866ae700340300280244d55cea80189aba25001135573ca00226ea80048c8c8cccd5cd19b875001480088c8488c00400cdd71aba135573ca00646666ae68cdc3a8012400046424460040066eb8d5d09aab9e500423263200933573801401200e00c26aae7540044dd500089119191999ab9a3370ea00290021091100091999ab9a3370ea00490011190911180180218031aba135573ca00846666ae68cdc3a801a400042444004464c6401466ae7002c02802001c0184d55cea80089baa0012323333573466e1d40052002200723333573466e1d40092000212200123263200633573800e00c00800626aae74dd5000a4c24002920103505431001220021123230010012233003300200200133351222335122335004335500248811c2b194b7d10a3d2d3152c5f3a628ff50cb9fc11e59453e8ac7a1aea4500488104544e4654005005112212330010030021120011122002122122330010040031200101").unwrap();
+
+        let redeemer = Redeemer::from_json("\
+         {
+            \"tag\": \"Mint\",
+            \"index\": \"0\",
+            \"data\": \"{\\\"constructor\\\":0,\\\"fields\\\":[]}\",
+            \"ex_units\": {
+              \"mem\": \"1042996\",
+              \"steps\": \"446100241\"
+            }
+          }").unwrap();
+
+        let redeemer2 = Redeemer::from_json("\
+         {
+            \"tag\": \"Mint\",
+            \"index\": \"0\",
+            \"data\": \"{\\\"constructor\\\":0,\\\"fields\\\":[]}\",
+            \"ex_units\": {
+              \"mem\": \"2929292\",
+              \"steps\": \"446188888\"
+            }
+          }").unwrap();
+
+        let asset_name = AssetName::from_hex("44544e4654").unwrap();
+        let asset_name2 = AssetName::from_hex("44544e4ada").unwrap();
+        let mut mint_builder = MintBuilder::new();
+        let plutus_script_source = PlutusScriptSource::new(&plutus_script);
+        let plutus_script_source_ref = PlutusScriptSource::new_ref_input_with_lang_ver(&plutus_script2.hash(), &tx_input_ref, &Language::new_plutus_v2());
+        let mint_witnes = MintWitness::new_plutus_script(&plutus_script_source, &redeemer);
+        let mint_witnes_ref = MintWitness::new_plutus_script(&plutus_script_source_ref, &redeemer2);
+        mint_builder.add_asset(&mint_witnes, &asset_name, &Int::new(&BigNum::from(100u64)));
+        mint_builder.add_asset(&mint_witnes_ref, &asset_name, &Int::new(&BigNum::from(100u64)));
+
+        let output_adress = Address::from_bech32("addr_test1qpm5njmgzf4t7225v6j34wl30xfrufzt3jtqtdzf3en9ahpmnhtmynpasyc8fq75zv0uaj86vzsr7g3g8q5ypgu5fwtqr9zsgj").unwrap();
+        let mut output_assets = MultiAsset::new();
+        let mut asset = Assets::new();
+        asset.insert(&asset_name, &BigNum::from(100u64));
+        output_assets.insert(&plutus_script.hash(), &asset);
+        let output_value = Value::new_with_assets(&Coin::from(50000u64), &output_assets);
+        let output = TransactionOutput::new(&output_adress, &output_value);
+
+        let mut col_builder = TxInputsBuilder::new();
+        col_builder.add_input(&colateral_adress, &colateral_input, &Value::new(&Coin::from(1000000000u64)));
+        tx_builder.set_collateral(&col_builder);
+        tx_builder.add_output(&output);
+        tx_builder.add_input(&output_adress, &tx_input, &Value::new(&BigNum::from(100000000000u64)));
+        tx_builder.set_mint_builder(&mint_builder);
+
+        tx_builder.calc_script_data_hash(&TxBuilderConstants::plutus_vasil_cost_models()).unwrap();
+
+        let change_res = tx_builder.add_change_if_needed(&output_adress);
+        assert!(change_res.is_ok());
+
+        let build_res = tx_builder.build_tx();
+        assert!(build_res.is_ok());
+
+        let tx = build_res.unwrap();
+        assert_eq!(tx.witness_set.plutus_scripts.unwrap().len(), 1usize);
+        assert_eq!(tx.witness_set.redeemers.unwrap().len(), 2usize);
+        assert!(tx.witness_set.plutus_data.is_none());
+        assert_eq!(tx.body.reference_inputs.unwrap().len(), 1usize);
+        assert!(tx.body.mint.is_some());
+        assert_eq!(tx.body.mint.unwrap().len(), 2usize);
+    }
+
+    #[test]
+    fn plutus_mint_defferent_redeemers_test() {
+        let mut tx_builder = create_reallistic_tx_builder();
+        let colateral_adress = Address::from_bech32("addr_test1qpu5vlrf4xkxv2qpwngf6cjhtw542ayty80v8dyr49rf5ewvxwdrt70qlcpeeagscasafhffqsxy36t90ldv06wqrk2qum8x5w").unwrap();
+        let colateral_input = TransactionInput::from_json("\
+          {
+            \"transaction_id\": \"69b0b867056a2d4fdc3827e23aa7069b125935e2def774941ca8cc7f9e0de774\",
+            \"index\": 1
+          }").unwrap();
+
+        let tx_input = TransactionInput::from_json("\
+          {
+            \"transaction_id\": \"f58a5bc761b1efdcf4b5684f6ad5495854a0d64b866e2f0f525d134750d3511b\",
+            \"index\": 1
+          }").unwrap();
+        let tx_input_ref = TransactionInput::from_json("\
+          {
+            \"transaction_id\": \"f58a5bc7adaadadcf4b5684f6ad5495854a0d64b866e2f0f525d134750d3511b\",
+            \"index\": 2
+          }").unwrap();
+        let plutus_script = plutus::PlutusScript::from_hex("5907d2010000332323232323232323232323232323322323232323222232325335332201b3333573466e1cd55ce9baa0044800080608c98c8060cd5ce00c80c00b1999ab9a3370e6aae7540092000233221233001003002323232323232323232323232323333573466e1cd55cea8062400046666666666664444444444442466666666666600201a01801601401201000e00c00a00800600466a02a02c6ae854030cd4054058d5d0a80599a80a80b9aba1500a3335501975ca0306ae854024ccd54065d7280c1aba1500833501502035742a00e666aa032042eb4d5d0a8031919191999ab9a3370e6aae75400920002332212330010030023232323333573466e1cd55cea8012400046644246600200600466a056eb4d5d0a80118161aba135744a004464c6405c66ae700bc0b80b04d55cf280089baa00135742a0046464646666ae68cdc39aab9d5002480008cc8848cc00400c008cd40add69aba15002302c357426ae8940088c98c80b8cd5ce01781701609aab9e5001137540026ae84d5d1280111931901519ab9c02b02a028135573ca00226ea8004d5d0a80299a80abae35742a008666aa03203a40026ae85400cccd54065d710009aba15002301f357426ae8940088c98c8098cd5ce01381301209aba25001135744a00226ae8940044d5d1280089aba25001135744a00226ae8940044d5d1280089aba25001135744a00226aae7940044dd50009aba15002300f357426ae8940088c98c8060cd5ce00c80c00b080b89931900b99ab9c4910350543500017135573ca00226ea800448c88c008dd6000990009aa80a911999aab9f0012500a233500930043574200460066ae880080508c8c8cccd5cd19b8735573aa004900011991091980080180118061aba150023005357426ae8940088c98c8050cd5ce00a80a00909aab9e5001137540024646464646666ae68cdc39aab9d5004480008cccc888848cccc00401401000c008c8c8c8cccd5cd19b8735573aa0049000119910919800801801180a9aba1500233500f014357426ae8940088c98c8064cd5ce00d00c80b89aab9e5001137540026ae854010ccd54021d728039aba150033232323333573466e1d4005200423212223002004357426aae79400c8cccd5cd19b875002480088c84888c004010dd71aba135573ca00846666ae68cdc3a801a400042444006464c6403666ae7007006c06406005c4d55cea80089baa00135742a00466a016eb8d5d09aba2500223263201533573802c02a02626ae8940044d5d1280089aab9e500113754002266aa002eb9d6889119118011bab00132001355012223233335573e0044a010466a00e66442466002006004600c6aae754008c014d55cf280118021aba200301213574200222440042442446600200800624464646666ae68cdc3a800a40004642446004006600a6ae84d55cf280191999ab9a3370ea0049001109100091931900819ab9c01101000e00d135573aa00226ea80048c8c8cccd5cd19b875001480188c848888c010014c01cd5d09aab9e500323333573466e1d400920042321222230020053009357426aae7940108cccd5cd19b875003480088c848888c004014c01cd5d09aab9e500523333573466e1d40112000232122223003005375c6ae84d55cf280311931900819ab9c01101000e00d00c00b135573aa00226ea80048c8c8cccd5cd19b8735573aa004900011991091980080180118029aba15002375a6ae84d5d1280111931900619ab9c00d00c00a135573ca00226ea80048c8cccd5cd19b8735573aa002900011bae357426aae7940088c98c8028cd5ce00580500409baa001232323232323333573466e1d4005200c21222222200323333573466e1d4009200a21222222200423333573466e1d400d2008233221222222233001009008375c6ae854014dd69aba135744a00a46666ae68cdc3a8022400c4664424444444660040120106eb8d5d0a8039bae357426ae89401c8cccd5cd19b875005480108cc8848888888cc018024020c030d5d0a8049bae357426ae8940248cccd5cd19b875006480088c848888888c01c020c034d5d09aab9e500b23333573466e1d401d2000232122222223005008300e357426aae7940308c98c804ccd5ce00a00980880800780700680600589aab9d5004135573ca00626aae7940084d55cf280089baa0012323232323333573466e1d400520022333222122333001005004003375a6ae854010dd69aba15003375a6ae84d5d1280191999ab9a3370ea0049000119091180100198041aba135573ca00c464c6401866ae700340300280244d55cea80189aba25001135573ca00226ea80048c8c8cccd5cd19b875001480088c8488c00400cdd71aba135573ca00646666ae68cdc3a8012400046424460040066eb8d5d09aab9e500423263200933573801401200e00c26aae7540044dd500089119191999ab9a3370ea00290021091100091999ab9a3370ea00490011190911180180218031aba135573ca00846666ae68cdc3a801a400042444004464c6401466ae7002c02802001c0184d55cea80089baa0012323333573466e1d40052002200723333573466e1d40092000212200123263200633573800e00c00800626aae74dd5000a4c24002920103505431001220021123230010012233003300200200133351222335122335004335500248811c2b194b7d10a3d2d3152c5f3a628ff50cb9fc11e59453e8ac7a1aea4500488104544e4654005005112212330010030021120011122002122122330010040031200101").unwrap();
+
+        let redeemer = Redeemer::from_json("\
+         {
+            \"tag\": \"Mint\",
+            \"index\": \"0\",
+            \"data\": \"{\\\"constructor\\\":0,\\\"fields\\\":[]}\",
+            \"ex_units\": {
+              \"mem\": \"1042996\",
+              \"steps\": \"446100241\"
+            }
+          }").unwrap();
+
+        let redeemer2 = Redeemer::from_json("\
+         {
+            \"tag\": \"Mint\",
+            \"index\": \"0\",
+            \"data\": \"{\\\"constructor\\\":0,\\\"fields\\\":[]}\",
+            \"ex_units\": {
+              \"mem\": \"2929292\",
+              \"steps\": \"446188888\"
+            }
+          }").unwrap();
+
+        let asset_name = AssetName::from_hex("44544e4654").unwrap();
+        let asset_name2 = AssetName::from_hex("44544e4ada").unwrap();
+        let mut mint_builder = MintBuilder::new();
+        let plutus_script_source = PlutusScriptSource::new(&plutus_script);
+        let mint_witnes = MintWitness::new_plutus_script(&plutus_script_source, &redeemer);
+        let mint_witnes2 = MintWitness::new_plutus_script(&plutus_script_source, &redeemer2);
+        mint_builder.add_asset(&mint_witnes, &asset_name, &Int::new(&BigNum::from(100u64)));
+        mint_builder.add_asset(&mint_witnes2, &asset_name, &Int::new(&BigNum::from(100u64)));
+
+        let output_adress = Address::from_bech32("addr_test1qpm5njmgzf4t7225v6j34wl30xfrufzt3jtqtdzf3en9ahpmnhtmynpasyc8fq75zv0uaj86vzsr7g3g8q5ypgu5fwtqr9zsgj").unwrap();
+        let mut output_assets = MultiAsset::new();
+        let mut asset = Assets::new();
+        asset.insert(&asset_name, &BigNum::from(100u64));
+        output_assets.insert(&plutus_script.hash(), &asset);
+        let output_value = Value::new_with_assets(&Coin::from(50000u64), &output_assets);
+        let output = TransactionOutput::new(&output_adress, &output_value);
+
+        let mut col_builder = TxInputsBuilder::new();
+        col_builder.add_input(&colateral_adress, &colateral_input, &Value::new(&Coin::from(1000000000u64)));
+        tx_builder.set_collateral(&col_builder);
+        tx_builder.add_output(&output);
+        tx_builder.add_input(&output_adress, &tx_input, &Value::new(&BigNum::from(100000000000u64)));
+        tx_builder.set_mint_builder(&mint_builder);
+
+        tx_builder.calc_script_data_hash(&TxBuilderConstants::plutus_vasil_cost_models()).unwrap();
+
+        let change_res = tx_builder.add_change_if_needed(&output_adress);
+        assert!(change_res.is_ok());
+
+        let build_res = tx_builder.build_tx();
+        assert!(build_res.is_ok());
+
+        let tx = build_res.unwrap();
+        assert_eq!(tx.witness_set.plutus_scripts.unwrap().len(), 1usize);
+        assert_eq!(tx.witness_set.redeemers.unwrap().len(), 2usize);
+        assert!(tx.witness_set.plutus_data.is_none());
+        assert!(tx.body.reference_inputs.is_none());
+        assert!(tx.body.mint.is_some());
+        assert_eq!(tx.body.mint.unwrap().len(), 2usize);
+    }
+
+    #[test]
+    fn multiple_plutus_inputs_test() {
+        let mut tx_builder = create_reallistic_tx_builder();
+        let plutus_script = plutus::PlutusScript::from_hex("5907d2010000332323232323232323232323232323322323232323222232325335332201b3333573466e1cd55ce9baa0044800080608c98c8060cd5ce00c80c00b1999ab9a3370e6aae7540092000233221233001003002323232323232323232323232323333573466e1cd55cea8062400046666666666664444444444442466666666666600201a01801601401201000e00c00a00800600466a02a02c6ae854030cd4054058d5d0a80599a80a80b9aba1500a3335501975ca0306ae854024ccd54065d7280c1aba1500833501502035742a00e666aa032042eb4d5d0a8031919191999ab9a3370e6aae75400920002332212330010030023232323333573466e1cd55cea8012400046644246600200600466a056eb4d5d0a80118161aba135744a004464c6405c66ae700bc0b80b04d55cf280089baa00135742a0046464646666ae68cdc39aab9d5002480008cc8848cc00400c008cd40add69aba15002302c357426ae8940088c98c80b8cd5ce01781701609aab9e5001137540026ae84d5d1280111931901519ab9c02b02a028135573ca00226ea8004d5d0a80299a80abae35742a008666aa03203a40026ae85400cccd54065d710009aba15002301f357426ae8940088c98c8098cd5ce01381301209aba25001135744a00226ae8940044d5d1280089aba25001135744a00226ae8940044d5d1280089aba25001135744a00226aae7940044dd50009aba15002300f357426ae8940088c98c8060cd5ce00c80c00b080b89931900b99ab9c4910350543500017135573ca00226ea800448c88c008dd6000990009aa80a911999aab9f0012500a233500930043574200460066ae880080508c8c8cccd5cd19b8735573aa004900011991091980080180118061aba150023005357426ae8940088c98c8050cd5ce00a80a00909aab9e5001137540024646464646666ae68cdc39aab9d5004480008cccc888848cccc00401401000c008c8c8c8cccd5cd19b8735573aa0049000119910919800801801180a9aba1500233500f014357426ae8940088c98c8064cd5ce00d00c80b89aab9e5001137540026ae854010ccd54021d728039aba150033232323333573466e1d4005200423212223002004357426aae79400c8cccd5cd19b875002480088c84888c004010dd71aba135573ca00846666ae68cdc3a801a400042444006464c6403666ae7007006c06406005c4d55cea80089baa00135742a00466a016eb8d5d09aba2500223263201533573802c02a02626ae8940044d5d1280089aab9e500113754002266aa002eb9d6889119118011bab00132001355012223233335573e0044a010466a00e66442466002006004600c6aae754008c014d55cf280118021aba200301213574200222440042442446600200800624464646666ae68cdc3a800a40004642446004006600a6ae84d55cf280191999ab9a3370ea0049001109100091931900819ab9c01101000e00d135573aa00226ea80048c8c8cccd5cd19b875001480188c848888c010014c01cd5d09aab9e500323333573466e1d400920042321222230020053009357426aae7940108cccd5cd19b875003480088c848888c004014c01cd5d09aab9e500523333573466e1d40112000232122223003005375c6ae84d55cf280311931900819ab9c01101000e00d00c00b135573aa00226ea80048c8c8cccd5cd19b8735573aa004900011991091980080180118029aba15002375a6ae84d5d1280111931900619ab9c00d00c00a135573ca00226ea80048c8cccd5cd19b8735573aa002900011bae357426aae7940088c98c8028cd5ce00580500409baa001232323232323333573466e1d4005200c21222222200323333573466e1d4009200a21222222200423333573466e1d400d2008233221222222233001009008375c6ae854014dd69aba135744a00a46666ae68cdc3a8022400c4664424444444660040120106eb8d5d0a8039bae357426ae89401c8cccd5cd19b875005480108cc8848888888cc018024020c030d5d0a8049bae357426ae8940248cccd5cd19b875006480088c848888888c01c020c034d5d09aab9e500b23333573466e1d401d2000232122222223005008300e357426aae7940308c98c804ccd5ce00a00980880800780700680600589aab9d5004135573ca00626aae7940084d55cf280089baa0012323232323333573466e1d400520022333222122333001005004003375a6ae854010dd69aba15003375a6ae84d5d1280191999ab9a3370ea0049000119091180100198041aba135573ca00c464c6401866ae700340300280244d55cea80189aba25001135573ca00226ea80048c8c8cccd5cd19b875001480088c8488c00400cdd71aba135573ca00646666ae68cdc3a8012400046424460040066eb8d5d09aab9e500423263200933573801401200e00c26aae7540044dd500089119191999ab9a3370ea00290021091100091999ab9a3370ea00490011190911180180218031aba135573ca00846666ae68cdc3a801a400042444004464c6401466ae7002c02802001c0184d55cea80089baa0012323333573466e1d40052002200723333573466e1d40092000212200123263200633573800e00c00800626aae74dd5000a4c24002920103505431001220021123230010012233003300200200133351222335122335004335500248811c2b194b7d10a3d2d3152c5f3a628ff50cb9fc11e59453e8ac7a1aea4500488104544e4654005005112212330010030021120011122002122122330010040031200101").unwrap();
+        let redeemer1 = Redeemer::from_json("\
+         {
+            \"tag\": \"Mint\",
+            \"index\": \"0\",
+            \"data\": \"{\\\"constructor\\\":0,\\\"fields\\\":[]}\",
+            \"ex_units\": {
+              \"mem\": \"1042996\",
+              \"steps\": \"446100241\"
+            }
+          }").unwrap();
+
+        let redeemer2 = Redeemer::from_json("\
+         {
+            \"tag\": \"Mint\",
+            \"index\": \"0\",
+            \"data\": \"{\\\"constructor\\\":0,\\\"fields\\\":[]}\",
+            \"ex_units\": {
+              \"mem\": \"1042996\",
+              \"steps\": \"446100241\"
+            }
+          }").unwrap();
+
+        let mut in_builder = TxInputsBuilder::new();
+        let input_1 = TransactionInput::new(
+            &TransactionHash::from_bytes(
+                hex::decode("3b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a1939b3aad1c0b7")
+                    .unwrap(),
+            )
+                .unwrap(),
+            1,
+        );
+        let input_2 = TransactionInput::new(
+            &TransactionHash::from_bytes(
+                hex::decode("3b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a1939b3aad1c0b7")
+                    .unwrap(),
+            )
+                .unwrap(),
+            2,
+        );
+
+        let colateral_adress = Address::from_bech32("addr_test1qpu5vlrf4xkxv2qpwngf6cjhtw542ayty80v8dyr49rf5ewvxwdrt70qlcpeeagscasafhffqsxy36t90ldv06wqrk2qum8x5w").unwrap();
+        let colateral_input = TransactionInput::new(
+            &TransactionHash::from_bytes(
+                hex::decode("3b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a1939b3aad1c0b7")
+                    .unwrap(),
+            )
+                .unwrap(),
+            3
+        );
+
+        let output_adress = Address::from_bech32("addr_test1qpm5njmgzf4t7225v6j34wl30xfrufzt3jtqtdzf3en9ahpmnhtmynpasyc8fq75zv0uaj86vzsr7g3g8q5ypgu5fwtqr9zsgj").unwrap();
+        let output_value = Value::new(&Coin::from(500000u64));
+        let output = TransactionOutput::new(&output_adress, &output_value);
+
+        tx_builder.add_output(&output);
+        let mut col_builder = TxInputsBuilder::new();
+        col_builder.add_input(&colateral_adress, &colateral_input, &Value::new(&Coin::from(1000000000u64)));
+        tx_builder.set_collateral(&col_builder);
+
+        let datum = PlutusData::new_bytes(fake_bytes_32(11));
+        let plutus_wit1 = PlutusWitness::new(
+            &plutus_script,
+            &datum,
+            &redeemer1
+        );
+
+        let plutus_wit2 = PlutusWitness::new(
+            &plutus_script,
+            &datum,
+            &redeemer2
+        );
+
+        let value = Value::new(&Coin::from(100000000u64));
+
+        in_builder.add_plutus_script_input(&plutus_wit1, &input_1, &value);
+        in_builder.add_plutus_script_input(&plutus_wit2, &input_2, &value);
+
+        tx_builder.set_inputs(&in_builder);
+        tx_builder.calc_script_data_hash(&TxBuilderConstants::plutus_vasil_cost_models());
+        tx_builder.add_change_if_needed(&output_adress);
+        let build_res = tx_builder.build_tx();
+        assert!(&build_res.is_ok());
+        let tx = build_res.unwrap();
+        assert_eq!(tx.witness_set.plutus_scripts.unwrap().len(), 1usize);
+        assert_eq!(tx.witness_set.redeemers.unwrap().len(), 2usize);
+    }
+
+    #[test]
+    fn multiple_plutus_inputs_with_missed_wit_test() {
+        let mut tx_builder = create_reallistic_tx_builder();
+        let plutus_script = plutus::PlutusScript::from_hex("5907d2010000332323232323232323232323232323322323232323222232325335332201b3333573466e1cd55ce9baa0044800080608c98c8060cd5ce00c80c00b1999ab9a3370e6aae7540092000233221233001003002323232323232323232323232323333573466e1cd55cea8062400046666666666664444444444442466666666666600201a01801601401201000e00c00a00800600466a02a02c6ae854030cd4054058d5d0a80599a80a80b9aba1500a3335501975ca0306ae854024ccd54065d7280c1aba1500833501502035742a00e666aa032042eb4d5d0a8031919191999ab9a3370e6aae75400920002332212330010030023232323333573466e1cd55cea8012400046644246600200600466a056eb4d5d0a80118161aba135744a004464c6405c66ae700bc0b80b04d55cf280089baa00135742a0046464646666ae68cdc39aab9d5002480008cc8848cc00400c008cd40add69aba15002302c357426ae8940088c98c80b8cd5ce01781701609aab9e5001137540026ae84d5d1280111931901519ab9c02b02a028135573ca00226ea8004d5d0a80299a80abae35742a008666aa03203a40026ae85400cccd54065d710009aba15002301f357426ae8940088c98c8098cd5ce01381301209aba25001135744a00226ae8940044d5d1280089aba25001135744a00226ae8940044d5d1280089aba25001135744a00226aae7940044dd50009aba15002300f357426ae8940088c98c8060cd5ce00c80c00b080b89931900b99ab9c4910350543500017135573ca00226ea800448c88c008dd6000990009aa80a911999aab9f0012500a233500930043574200460066ae880080508c8c8cccd5cd19b8735573aa004900011991091980080180118061aba150023005357426ae8940088c98c8050cd5ce00a80a00909aab9e5001137540024646464646666ae68cdc39aab9d5004480008cccc888848cccc00401401000c008c8c8c8cccd5cd19b8735573aa0049000119910919800801801180a9aba1500233500f014357426ae8940088c98c8064cd5ce00d00c80b89aab9e5001137540026ae854010ccd54021d728039aba150033232323333573466e1d4005200423212223002004357426aae79400c8cccd5cd19b875002480088c84888c004010dd71aba135573ca00846666ae68cdc3a801a400042444006464c6403666ae7007006c06406005c4d55cea80089baa00135742a00466a016eb8d5d09aba2500223263201533573802c02a02626ae8940044d5d1280089aab9e500113754002266aa002eb9d6889119118011bab00132001355012223233335573e0044a010466a00e66442466002006004600c6aae754008c014d55cf280118021aba200301213574200222440042442446600200800624464646666ae68cdc3a800a40004642446004006600a6ae84d55cf280191999ab9a3370ea0049001109100091931900819ab9c01101000e00d135573aa00226ea80048c8c8cccd5cd19b875001480188c848888c010014c01cd5d09aab9e500323333573466e1d400920042321222230020053009357426aae7940108cccd5cd19b875003480088c848888c004014c01cd5d09aab9e500523333573466e1d40112000232122223003005375c6ae84d55cf280311931900819ab9c01101000e00d00c00b135573aa00226ea80048c8c8cccd5cd19b8735573aa004900011991091980080180118029aba15002375a6ae84d5d1280111931900619ab9c00d00c00a135573ca00226ea80048c8cccd5cd19b8735573aa002900011bae357426aae7940088c98c8028cd5ce00580500409baa001232323232323333573466e1d4005200c21222222200323333573466e1d4009200a21222222200423333573466e1d400d2008233221222222233001009008375c6ae854014dd69aba135744a00a46666ae68cdc3a8022400c4664424444444660040120106eb8d5d0a8039bae357426ae89401c8cccd5cd19b875005480108cc8848888888cc018024020c030d5d0a8049bae357426ae8940248cccd5cd19b875006480088c848888888c01c020c034d5d09aab9e500b23333573466e1d401d2000232122222223005008300e357426aae7940308c98c804ccd5ce00a00980880800780700680600589aab9d5004135573ca00626aae7940084d55cf280089baa0012323232323333573466e1d400520022333222122333001005004003375a6ae854010dd69aba15003375a6ae84d5d1280191999ab9a3370ea0049000119091180100198041aba135573ca00c464c6401866ae700340300280244d55cea80189aba25001135573ca00226ea80048c8c8cccd5cd19b875001480088c8488c00400cdd71aba135573ca00646666ae68cdc3a8012400046424460040066eb8d5d09aab9e500423263200933573801401200e00c26aae7540044dd500089119191999ab9a3370ea00290021091100091999ab9a3370ea00490011190911180180218031aba135573ca00846666ae68cdc3a801a400042444004464c6401466ae7002c02802001c0184d55cea80089baa0012323333573466e1d40052002200723333573466e1d40092000212200123263200633573800e00c00800626aae74dd5000a4c24002920103505431001220021123230010012233003300200200133351222335122335004335500248811c2b194b7d10a3d2d3152c5f3a628ff50cb9fc11e59453e8ac7a1aea4500488104544e4654005005112212330010030021120011122002122122330010040031200101").unwrap();
+        let redeemer1 = Redeemer::from_json("\
+         {
+            \"tag\": \"Mint\",
+            \"index\": \"0\",
+            \"data\": \"{\\\"constructor\\\":0,\\\"fields\\\":[]}\",
+            \"ex_units\": {
+              \"mem\": \"1042996\",
+              \"steps\": \"446100241\"
+            }
+          }").unwrap();
+
+        let redeemer2 = Redeemer::from_json("\
+         {
+            \"tag\": \"Mint\",
+            \"index\": \"0\",
+            \"data\": \"{\\\"constructor\\\":0,\\\"fields\\\":[]}\",
+            \"ex_units\": {
+              \"mem\": \"1042996\",
+              \"steps\": \"446100241\"
+            }
+          }").unwrap();
+
+        let mut in_builder = TxInputsBuilder::new();
+        let input_1 = TransactionInput::new(
+            &TransactionHash::from_bytes(
+                hex::decode("3b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a1939b3aad1c0b7")
+                    .unwrap(),
+            )
+                .unwrap(),
+            1,
+        );
+        let input_2 = TransactionInput::new(
+            &TransactionHash::from_bytes(
+                hex::decode("3b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a1939b3aad1c0b7")
+                    .unwrap(),
+            )
+                .unwrap(),
+            2,
+        );
+
+        let colateral_adress = Address::from_bech32("addr_test1qpu5vlrf4xkxv2qpwngf6cjhtw542ayty80v8dyr49rf5ewvxwdrt70qlcpeeagscasafhffqsxy36t90ldv06wqrk2qum8x5w").unwrap();
+        let colateral_input = TransactionInput::new(
+            &TransactionHash::from_bytes(
+                hex::decode("3b40265111d8bb3c3c608d95b3a0bf83461ace32d79336579a1939b3aad1c0b7")
+                    .unwrap(),
+            )
+                .unwrap(),
+            3
+        );
+
+        let output_adress = Address::from_bech32("addr_test1qpm5njmgzf4t7225v6j34wl30xfrufzt3jtqtdzf3en9ahpmnhtmynpasyc8fq75zv0uaj86vzsr7g3g8q5ypgu5fwtqr9zsgj").unwrap();
+        let output_value = Value::new(&Coin::from(500000u64));
+        let output = TransactionOutput::new(&output_adress, &output_value);
+
+        tx_builder.add_output(&output);
+        let mut col_builder = TxInputsBuilder::new();
+        col_builder.add_input(&colateral_adress, &colateral_input, &Value::new(&Coin::from(1000000000u64)));
+        tx_builder.set_collateral(&col_builder);
+
+        let datum = PlutusData::new_bytes(fake_bytes_32(11));
+        let plutus_wit1 = PlutusWitness::new(
+            &plutus_script,
+            &datum,
+            &redeemer1
+        );
+
+        let plutus_wit2 = PlutusWitness::new(
+            &plutus_script,
+            &datum,
+            &redeemer2
+        );
+
+        let value = Value::new(&Coin::from(100000000u64));
+
+        in_builder.add_plutus_script_input(&plutus_wit1, &input_1, &value);
+        let script_addr = create_base_address_from_script_hash(&plutus_script.hash());
+        in_builder.add_input(&script_addr, &input_2, &value);
+
+        assert_eq!(in_builder.count_missing_input_scripts(), 1usize);
+        let mut inputs_with_wit = InputsWithScriptWitness::new();
+        let in_with_wit = InputWithScriptWitness::new_with_plutus_witness(&input_2,  &plutus_wit2);
+        inputs_with_wit.add(&in_with_wit);
+        in_builder.add_required_script_input_witnesses(&inputs_with_wit);
+
+        tx_builder.set_inputs(&in_builder);
+
+
+        tx_builder.calc_script_data_hash(&TxBuilderConstants::plutus_vasil_cost_models());
+        tx_builder.add_change_if_needed(&output_adress);
+        let build_res = tx_builder.build_tx();
+        assert!(&build_res.is_ok());
+        let tx = build_res.unwrap();
+        assert_eq!(tx.witness_set.plutus_scripts.unwrap().len(), 1usize);
+        assert_eq!(tx.witness_set.redeemers.unwrap().len(), 2usize);
     }
 }
