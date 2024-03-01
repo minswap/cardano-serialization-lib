@@ -609,6 +609,11 @@ impl TransactionBuilder {
         Ok(())
     }
 
+    pub fn remove_output(&mut self, index: usize) {
+        self.outputs
+            .remove(index);
+    }
+
     fn cip2_largest_first_by<F>(
         &mut self,
         available_inputs: &Vec<TransactionUnspentOutput>,
