@@ -217,10 +217,6 @@ impl TransactionOutputs {
         self.0[index].clone()
     }
 
-    pub fn remove(&mut self, index: usize) {
-        self.0.remove(index);
-    }
-
     pub fn add(&mut self, elem: &TransactionOutput) {
         self.0.push(elem.clone());
     }

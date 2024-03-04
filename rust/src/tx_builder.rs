@@ -609,11 +609,6 @@ impl TransactionBuilder {
         Ok(())
     }
 
-    pub fn remove_output(&mut self, index: usize) {
-        self.outputs
-            .remove(index);
-    }
-
     fn cip2_largest_first_by<F>(
         &mut self,
         available_inputs: &Vec<TransactionUnspentOutput>,
@@ -769,6 +764,12 @@ impl TransactionBuilder {
 
     pub fn set_inputs(&mut self, inputs: &TxInputsBuilder) {
         self.inputs = inputs.clone();
+    }
+
+    pub fn reset_outputs(&mut self) -> TransactionOutputs {
+        let prev_outputs = self.outputs.clone();
+        self.outputs = TransactionOutputs::new();
+        prev_outputs
     }
 
     pub fn set_collateral(&mut self, collateral: &TxInputsBuilder) {
