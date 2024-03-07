@@ -766,6 +766,12 @@ impl TransactionBuilder {
         self.inputs = inputs.clone();
     }
 
+    pub fn reset_outputs(&mut self) -> TransactionOutputs {
+        let prev_outputs = self.outputs.clone();
+        self.outputs = TransactionOutputs::new();
+        prev_outputs
+    }
+
     pub fn set_collateral(&mut self, collateral: &TxInputsBuilder) {
         self.collateral = collateral.clone();
     }
