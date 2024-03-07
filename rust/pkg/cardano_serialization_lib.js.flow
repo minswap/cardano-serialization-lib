@@ -7882,6 +7882,11 @@ declare export class TransactionBuilder {
   set_inputs(inputs: TxInputsBuilder): void;
 
   /**
+   * @returns {TransactionOutputs}
+   */
+  reset_outputs(): TransactionOutputs;
+
+  /**
    * @param {TxInputsBuilder} collateral
    */
   set_collateral(collateral: TxInputsBuilder): void;
