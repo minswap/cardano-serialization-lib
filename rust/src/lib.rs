@@ -1707,6 +1707,12 @@ impl RewardAddresses {
     pub fn add(&mut self, elem: &RewardAddress) {
         self.0.push(elem.clone());
     }
+
+    pub fn sort(&mut self) -> RewardAddresses {
+        let mut sorted_addresses = self.0.clone();
+        sorted_addresses.sort();
+        RewardAddresses(sorted_addresses)
+    }
 }
 
 #[wasm_bindgen]
@@ -3875,5 +3881,33 @@ mod tests {
         assert!(pks4.contains(&keyhash1));
         assert!(pks4.contains(&keyhash2));
         assert!(pks4.contains(&keyhash3));
+    }
+
+    #[test]
+    fn test_sort_reward_addresses() {
+        let mut reward_addresses = RewardAddresses::new();
+        let stake_addresses = vec![
+            "stake_test1uztg6yppa0t30rslkrneva5c9qju40rhndjnuy356kxw83s6n95nu",
+            "stake_test1uzkdwx64sjkt6xxtzye00y3k2m9wn5zultsguadaf4ggmssadyunp",
+            "stake_test1urcnqgzt2x8hpsvej4zfudehahknm8lux894pmqwg5qshgcrn346q",
+            "stake_test1uquj460qdrj4az6uy7kvtzct4w8226xq4t30dlzfhc360tgegny4m",
+            "stake_test1upnakjguet3zc7qzrw54p3nc3j8c7pd5v4w8x5evdzseygs94dlxq",
+            "stake_test1upxue2rk4tp0e3tp7l0nmfmj6ar7y9yvngzu0vn7fxs9ags2apttt",
+            "stake_test1uzd5n43zv7alhw5gfwpeemu8uevg0c7xwhfzsakvvm2dwvqe08pn0",
+            "stake_test1uz4vcaa8m5228wt725a993fjhux7a6vrx3gqxrg40z6eyksdet0kw",
+            "stake_test1uzn083tm8erradk0lwzzkegewdtwj6mukk2ep2r03g9j87g0020y2",
+            "stake_test1urkaxwavpp37j083cvafwymnpmqm5wl6hre4ev99pcyt3tcvq0gns",
+        ];
+
+        for address in stake_addresses {
+            reward_addresses
+            .add(&RewardAddress::from_address(&Address::from_bech32(address).unwrap()).unwrap());
+        }
+
+        let sorted_addresses = reward_addresses.sort();
+        assert_eq!(sorted_addresses.len(), 10);
+        // for address in sorted_addresses.0 {
+        //     println!("{}", address.to_address().to_bech32(None).unwrap());
+        // }
     }
 }
