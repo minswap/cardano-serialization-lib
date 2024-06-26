@@ -2242,7 +2242,6 @@ mod tests {
     fn build_tx_withdraw() {
         let mut tx_builder: TransactionBuilder = create_default_tx_builder();
         let payment_addr = Address::from_bech32("addr_test1qrev489ndc4n5rvcscce4ug2nqrcg3f93u9nq0z6lfrqgwpcc8ypmmlrlz4sgak8azdp8jeqv5psgvdlk7jvl5ht8ruquf04vw").unwrap();
-        let change_addr = Address::from_bech32("addr_test1qrev489ndc4n5rvcscce4ug2nqrcg3f93u9nq0z6lfrqgwpcc8ypmmlrlz4sgak8azdp8jeqv5psgvdlk7jvl5ht8ruquf04vw").unwrap();
         let input = TransactionInput::new(
             &TransactionHash::from_hex(
                 "ecc0d58b2a997056cbb3c70b8ea166f3f29305bb1bc14fade0ebc5298093dca2",
@@ -2267,7 +2266,7 @@ mod tests {
         );
     
         tx_builder.set_withdrawals(&withdrawals);
-        tx_builder.add_change_if_needed(&change_addr).unwrap();
+        tx_builder.add_change_if_needed(&payment_addr).unwrap();
         assert_eq!(
             tx_builder
                 .get_explicit_input()
