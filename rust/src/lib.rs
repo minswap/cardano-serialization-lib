@@ -1743,6 +1743,15 @@ impl Withdrawals {
     }
 }
 
+impl From<&Withdrawals> for RequiredSignersSet {
+    fn from(withdrawals: &Withdrawals) -> Self {
+        withdrawals.0.iter().fold(BTreeSet::new(), |mut set, w| {
+            set.insert((*w.0).payment_cred().to_keyhash().unwrap());
+            set
+        })
+    }
+}
+
 impl serde::Serialize for Withdrawals {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
