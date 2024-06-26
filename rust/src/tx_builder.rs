@@ -434,7 +434,7 @@ pub struct TransactionBuilder {
     required_signers: Ed25519KeyHashes,
     collateral_return: Option<TransactionOutput>,
     total_collateral: Option<Coin>,
-    reference_inputs: HashSet<TransactionInput>,
+    reference_inputs: TransactionInputs,
     minswap_mode: bool,
     plutus_scripts: Option<PlutusScripts>,
     plutus_data: Option<PlutusList>,
@@ -769,6 +769,12 @@ impl TransactionBuilder {
         self.inputs = inputs.clone();
     }
 
+    pub fn reset_outputs(&mut self) -> TransactionOutputs {
+        let prev_outputs = self.outputs.clone();
+        self.outputs = TransactionOutputs::new();
+        prev_outputs
+    }
+
     pub fn set_collateral(&mut self, collateral: &TxInputsBuilder) {
         self.collateral = collateral.clone();
     }
@@ -852,7 +858,7 @@ impl TransactionBuilder {
     }
 
     pub fn add_reference_input(&mut self, reference_input: &TransactionInput) {
-        self.reference_inputs.insert(reference_input.clone());
+        self.reference_inputs.add(reference_input);
     }
 
     /// We have to know what kind of inputs these are to know what kind of mock witnesses to create since
@@ -1335,7 +1341,7 @@ impl TransactionBuilder {
             required_signers: Ed25519KeyHashes::new(),
             collateral_return: None,
             total_collateral: None,
-            reference_inputs: HashSet::new(),
+            reference_inputs: TransactionInputs::new(),
             minswap_mode: cfg.minswap_mode,
             plutus_scripts: None,
             plutus_data: None,
@@ -1344,13 +1350,7 @@ impl TransactionBuilder {
     }
 
     pub fn get_reference_inputs(&self) -> TransactionInputs {
-        let mut inputs = self.reference_inputs.clone();
-        for input in self.inputs.get_ref_inputs().0 {
-            inputs.insert(input);
-        }
-
-        let vec_inputs = inputs.into_iter().collect();
-        TransactionInputs(vec_inputs)
+        self.reference_inputs.clone()
     }
 
     /// does not include refunds or withdrawals
