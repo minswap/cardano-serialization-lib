@@ -1746,7 +1746,13 @@ impl Withdrawals {
 impl From<&Withdrawals> for RequiredSignersSet {
     fn from(withdrawals: &Withdrawals) -> Self {
         withdrawals.0.iter().fold(BTreeSet::new(), |mut set, w| {
-            set.insert((*w.0).payment_cred().to_keyhash().unwrap());
+            let payment_cred = (*w.0).payment_cred();
+            let kind = payment_cred.kind();
+            if kind == StakeCredKind::Key {
+                if let Some(keyhash) = payment_cred.to_keyhash() {
+                    set.insert(keyhash);
+                }
+            }
             set
         })
     }
