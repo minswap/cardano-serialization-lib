@@ -2022,7 +2022,6 @@ impl TransactionBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Add;
 
     use super::output_builder::TransactionOutputBuilder;
     use super::*;
