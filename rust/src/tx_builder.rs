@@ -2022,7 +2022,6 @@ impl TransactionBuilder {
 
 #[cfg(test)]
 mod tests {
-
     use super::output_builder::TransactionOutputBuilder;
     use super::*;
     use crate::fakes::{fake_base_address, fake_bytes_32, fake_key_hash, fake_policy_id, fake_tx_hash, fake_tx_input, fake_tx_input2, fake_value, fake_value2};
