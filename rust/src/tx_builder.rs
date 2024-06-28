@@ -143,6 +143,9 @@ fn count_needed_vkeys(tx_builder: &TransactionBuilder) -> usize {
     if let Some(scripts) = &tx_builder.mint_scripts {
         input_hashes.extend(RequiredSignersSet::from(scripts));
     }
+    if let Some(withdrawals) = &tx_builder.withdrawals {
+        input_hashes.extend(RequiredSignersSet::from(withdrawals));
+    }
     input_hashes.len()
 }
 
@@ -2231,6 +2234,50 @@ mod tests {
         assert_eq!(tx_builder.full_size().unwrap(), 285);
         assert_eq!(tx_builder.output_sizes(), vec![62, 65]);
         let _final_tx = tx_builder.build(); // just test that it doesn't throw
+    }
+
+    #[test]
+    fn build_tx_withdraw() {
+        let mut tx_builder: TransactionBuilder = create_default_tx_builder();
+        let payment_addr = Address::from_bech32("addr_test1qrev489ndc4n5rvcscce4ug2nqrcg3f93u9nq0z6lfrqgwpcc8ypmmlrlz4sgak8azdp8jeqv5psgvdlk7jvl5ht8ruquf04vw").unwrap();
+        let input = TransactionInput::new(
+            &TransactionHash::from_hex(
+                "ecc0d58b2a997056cbb3c70b8ea166f3f29305bb1bc14fade0ebc5298093dca2",
+            )
+            .unwrap(),
+            2,
+        );
+        
+        tx_builder.add_input(
+            &payment_addr,
+            &input,
+            &Value::new(&BigNum::from_str("5736075744").unwrap()),
+        );
+    
+    
+        let stake_addr = Address::from_bech32("stake_test1uquvrjqaal3l32cywmr73xsnevsx2qcyxxlm0fx06t4n37qpxp68z").unwrap();
+    
+        let mut withdrawals = Withdrawals::new();
+        withdrawals.insert(
+            &RewardAddress::from_address(&stake_addr).unwrap(),
+            &BigNum::from_str("7175949").unwrap(),
+        );
+    
+        tx_builder.set_withdrawals(&withdrawals);
+        tx_builder.add_change_if_needed(&payment_addr).unwrap();
+        assert_eq!(
+            tx_builder
+                .get_explicit_input()
+                .unwrap()
+                .checked_add(&tx_builder.get_implicit_input().unwrap())
+                .unwrap(),
+            tx_builder
+                .get_explicit_output()
+                .unwrap()
+                .checked_add(&Value::new(&tx_builder.get_fee_if_set().unwrap()))
+                .unwrap()
+        );
+        assert_eq!(&tx_builder.get_fee_if_set().unwrap(), &BigNum::from_str("183002").unwrap());
     }
 
     #[test]
