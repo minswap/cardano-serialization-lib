@@ -104,6 +104,7 @@ impl PlutusScript {
         match self.language {
             LanguageKind::PlutusV1 => ScriptHashNamespace::PlutusScript,
             LanguageKind::PlutusV2 => ScriptHashNamespace::PlutusScriptV2,
+            LanguageKind::PlutusV3 => ScriptHashNamespace::PlutusScriptV3,
         }
     }
 
@@ -157,6 +158,7 @@ pub enum ScriptEnum {
     NativeScript(NativeScript),
     PlutusScriptV1(PlutusScript),
     PlutusScriptV2(PlutusScript),
+    PlutusScriptV3(PlutusScript),
 }
 
 #[wasm_bindgen]
@@ -167,6 +169,7 @@ pub enum ScriptKind {
     NativeScript,
     PlutusScriptV1,
     PlutusScriptV2,
+    PlutusScriptV3,
 }
 
 #[wasm_bindgen]
@@ -192,11 +195,16 @@ impl Script {
         Self(ScriptEnum::PlutusScriptV2(plutus_script.clone()))
     }
 
+    pub fn new_plutus_v3(plutus_script: &PlutusScript) -> Self {
+        Self(ScriptEnum::PlutusScriptV3(plutus_script.clone()))
+    }
+
     pub fn kind(&self) -> ScriptKind {
         match &self.0 {
             ScriptEnum::NativeScript(_) => ScriptKind::NativeScript,
             ScriptEnum::PlutusScriptV1(_) => ScriptKind::PlutusScriptV1,
             ScriptEnum::PlutusScriptV2(_) => ScriptKind::PlutusScriptV2,
+            ScriptEnum::PlutusScriptV3(_) => ScriptKind::PlutusScriptV3,
         }
     }
 
@@ -561,6 +569,7 @@ impl ExUnits {
 pub enum LanguageKind {
     PlutusV1 = 0,
     PlutusV2 = 1,
+    PlutusV3 = 2,
 }
 
 impl LanguageKind {
@@ -598,6 +607,10 @@ impl Language {
 
     pub fn new_plutus_v2() -> Self {
         Self(LanguageKind::PlutusV2)
+    }
+
+    pub fn new_plutus_v3() -> Self {
+        Self(LanguageKind::PlutusV3)
     }
 
     pub fn kind(&self) -> LanguageKind {
@@ -1398,6 +1411,10 @@ impl cbor_event::se::Serialize for Script {
                 plutus_script.serialize(serializer)
             }
             ScriptEnum::PlutusScriptV2(plutus_script) => {
+                serializer.write_unsigned_integer(2u64)?;
+                plutus_script.serialize(serializer)
+            }
+            ScriptEnum::PlutusScriptV3(plutus_script) => {
                 serializer.write_unsigned_integer(2u64)?;
                 plutus_script.serialize(serializer)
             }
@@ -2430,6 +2447,25 @@ mod tests {
             Language::from_bytes(Language::new_plutus_v2().to_bytes()).unwrap(),
             Language::new_plutus_v2(),
         );
+    }
+
+    #[test]
+    fn test_sanchonet_hash_script_data() {
+        let data = "d8799fd8799fd8799f581c1c22ec9a30b7ff9988ef85645aea07a95f74bdc95f2e5c65dfa25836ffd8799fd8799fd8799f581c1849221014d198870027afe81d6a3e2b4d5af372f38546707c4d9845ffffffffd8799fd8799f581c1c22ec9a30b7ff9988ef85645aea07a95f74bdc95f2e5c65dfa25836ffd8799fd8799fd8799f581c1849221014d198870027afe81d6a3e2b4d5af372f38546707c4d9845ffffffffd87a80d8799fd8799f581ce16c2dc8ae937e8d3790c7fd7168d7b994621ba14ca11415f39fed72434d494eff01ff1a001e84801a001e8480ff";
+        let datum = PlutusData::from_bytes(hex::decode(data).unwrap()).unwrap();
+        let datums = PlutusList::from(vec![datum]);
+
+        let mut costmodels = Costmdls::new();
+        costmodels.insert(
+            &Language::new_plutus_v1(),
+            &TxBuilderConstants::plutus_conway_cost_models().get(&Language::new_plutus_v1()).unwrap(),
+        );
+        let hash = hash_script_data(
+            &Redeemers(vec![]),
+            &costmodels,
+            Some(datums),
+        );
+        assert_eq!(hex::encode(hash.to_bytes()), "ec673bdc770ad85935b703bf3202303d20aa97892a5ec728fb050663a34f5099");
     }
 
     #[test]

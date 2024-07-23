@@ -1227,7 +1227,7 @@ pub fn hash_script_data(
         ; [ 80 | datums | A0 ]
         ; corresponding to a CBOR empty list and an empty map (our apologies).
         */
-        buf.push(0x80);
+        buf.push(0xA0);
         if let Some(d) = &datums {
             buf.extend(d.to_bytes());
         }

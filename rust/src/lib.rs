@@ -2092,7 +2092,8 @@ impl ScriptRef {
         let language_kind = plutus_script.language_version().kind().clone();
         match language_kind {
             LanguageKind::PlutusV1 => Self(Script::new_plutus_v1(plutus_script)),
-            LanguageKind::PlutusV2 => Self(Script::new_plutus_v2(plutus_script))
+            LanguageKind::PlutusV2 => Self(Script::new_plutus_v2(plutus_script)),
+            LanguageKind::PlutusV3 => Self(Script::new_plutus_v3(plutus_script))
         }
     }
 
@@ -2131,6 +2132,7 @@ pub enum ScriptHashNamespace {
     NativeScript = 0,
     PlutusScript = 1,
     PlutusScriptV2 = 2,
+    PlutusScriptV3 = 3,
 }
 
 #[wasm_bindgen]
