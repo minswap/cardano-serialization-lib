@@ -6,23 +6,27 @@
  */
 
 /**
- * @param {string} json
- * @param {number} schema
- * @returns {PlutusData}
- */
-declare export function encode_json_str_to_plutus_datum(
-  json: string,
-  schema: number
-): PlutusData;
-
-/**
- * @param {PlutusData} datum
- * @param {number} schema
+ * @param {string} password
+ * @param {string} salt
+ * @param {string} nonce
+ * @param {string} data
  * @returns {string}
  */
-declare export function decode_plutus_datum_to_json_str(
-  datum: PlutusData,
-  schema: number
+declare export function encrypt_with_password(
+  password: string,
+  salt: string,
+  nonce: string,
+  data: string
+): string;
+
+/**
+ * @param {string} password
+ * @param {string} data
+ * @returns {string}
+ */
+declare export function decrypt_with_password(
+  password: string,
+  data: string
 ): string;
 
 /**
@@ -194,6 +198,26 @@ declare export function get_ex_units(
 ): Redeemers;
 
 /**
+ * @param {string} json
+ * @param {number} schema
+ * @returns {PlutusData}
+ */
+declare export function encode_json_str_to_plutus_datum(
+  json: string,
+  schema: number
+): PlutusData;
+
+/**
+ * @param {PlutusData} datum
+ * @param {number} schema
+ * @returns {string}
+ */
+declare export function decode_plutus_datum_to_json_str(
+  datum: PlutusData,
+  schema: number
+): string;
+
+/**
  * @param {Uint8Array} bytes
  * @returns {TransactionMetadatum}
  */
@@ -267,30 +291,6 @@ declare export function min_script_fee(
 ): BigNum;
 
 /**
- * @param {string} password
- * @param {string} salt
- * @param {string} nonce
- * @param {string} data
- * @returns {string}
- */
-declare export function encrypt_with_password(
-  password: string,
-  salt: string,
-  nonce: string,
-  data: string
-): string;
-
-/**
- * @param {string} password
- * @param {string} data
- * @returns {string}
- */
-declare export function decrypt_with_password(
-  password: string,
-  data: string
-): string;
-
-/**
  */
 
 declare export var CertificateKind: {|
@@ -362,6 +362,25 @@ declare export var NetworkIdKind: {|
 |};
 
 /**
+ * Used to choosed the schema for a script JSON string
+ */
+
+declare export var ScriptSchema: {|
+  +Wallet: 0, // 0
+  +Node: 1, // 1
+|};
+
+/**
+ */
+
+declare export var CoinSelectionStrategyCIP2: {|
+  +LargestFirst: 0, // 0
+  +RandomImprove: 1, // 1
+  +LargestFirstMultiAsset: 2, // 2
+  +RandomImproveMultiAsset: 3, // 3
+|};
+
+/**
  */
 
 declare export var ScriptKind: {|
@@ -414,25 +433,6 @@ declare export var RedeemerTagKind: {|
 declare export var PlutusDatumSchema: {|
   +BasicConversions: 0, // 0
   +DetailedSchema: 1, // 1
-|};
-
-/**
- * Used to choosed the schema for a script JSON string
- */
-
-declare export var ScriptSchema: {|
-  +Wallet: 0, // 0
-  +Node: 1, // 1
-|};
-
-/**
- */
-
-declare export var CoinSelectionStrategyCIP2: {|
-  +LargestFirst: 0, // 0
-  +RandomImprove: 1, // 1
-  +LargestFirstMultiAsset: 2, // 2
-  +RandomImproveMultiAsset: 3, // 3
 |};
 
 /**
