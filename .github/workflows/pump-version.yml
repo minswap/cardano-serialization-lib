@@ -3,7 +3,7 @@ name: Bump Version on Merge
 on:
   push:
     branches:
-      - tony/pump-uplc-main
+      - minswap-11
 
 jobs:
   bump_version:
