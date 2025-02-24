@@ -1881,15 +1881,8 @@ impl TransactionBuilder {
     /// Auxiliary data itself is not included
     /// You can use `get_auxiliary_data` or `build_tx`
     pub fn build(&self) -> Result<TransactionBody, JsError> {
-        let (body, full_tx_size) = self.build_and_size()?;
-        if full_tx_size > self.config.max_tx_size as usize {
-            Err(JsError::from_str(&format!(
-                "Maximum transaction size of {} exceeded. Found: {}",
-                self.config.max_tx_size, full_tx_size
-            )))
-        } else {
-            Ok(body)
-        }
+        let (body, _) = self.build_and_size()?;
+        Ok(body)
     }
 
     fn get_combined_native_scripts(&self) -> Option<NativeScripts> {
