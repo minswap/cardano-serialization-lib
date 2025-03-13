@@ -7321,6 +7321,29 @@ mod tests {
     }
 
     #[test]
+    fn test_plutus_v3() {
+        let mut tx_builder = create_default_tx_builder();
+        // let mut address = Address::from_bech32("addr_test1qp03v9yeg0vcfdhyn65ets2juearxpc3pmdhr0sxs0w6wh3sjf67h3yhrpxpv00zqfc7rtmr6mnmrcplfdkw5zhnl49qmyf0q5").unwrap();
+        let input = TransactionInput::new(&genesis_id(), 0);
+        let value = Value::new(&to_bignum(1_000_000));
+        let script = "585e585c01010029800aba2aba1aab9eaab9dab9a4888896600264653001300600198031803800cc0180092225980099b8748008c01cdd500144c8cc892898050009805180580098041baa0028b200c180300098019baa0068a4d13656400401";
+        let bytes = hex::decode(script).unwrap();
+        let plutus_script = PlutusScript::new_v3(bytes);
+        let datum = PlutusData::new_integer(&BigInt::from_str("42").unwrap());
+        let redeemer_datum = PlutusData::new_bytes(fake_bytes_32(2));
+        let redeemer = Redeemer::new(
+            &RedeemerTag::new_spend(),
+            &to_bignum(0),
+            &redeemer_datum,
+            &ExUnits::new(&to_bignum(1), &to_bignum(2)),
+        );
+        let witness = PlutusWitness::new(&plutus_script, &datum, &redeemer);
+        tx_builder.add_plutus_script_input(&witness, &input, &value);
+        tx_builder.set_fee(&to_bignum(42));
+        tx_builder.build().unwrap();
+    }
+
+    #[test]
     fn coin_selection_random_improve_multi_asset() {
         let utoxs = TransactionUnspentOutputs::from_json("[ { \"input\": {
   \"transaction_id\": \"96631bf40bc2ae1e10b3c9157a4c711562c664b9744ed1f580b725e0589efcd0\",

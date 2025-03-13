@@ -35,3 +35,10 @@
   ```
 
   This helps to keep your Docker environment clean.
+
+### One-off
+```
+docker create --name temp_container minswap-csl:latest
+docker cp temp_container:/usr/src/app/rust/pkg rust/pkg
+docker rm temp_container
+```

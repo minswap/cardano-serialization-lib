@@ -1,5 +1,5 @@
 # Use Rust as the base image and install Node.js manually
-FROM rust:1.75 AS builder
+FROM rust:1.85 AS builder
 
 # Install required dependencies (Clang, Node.js, npm)
 RUN apt-get update && apt-get install -y curl pkg-config build-essential clang \
@@ -24,12 +24,12 @@ COPY . .
 
 # Build Rust WASM package
 WORKDIR /usr/src/app/rust
-RUN cargo build
-# Install Rust WASM target before running wasm-pack
-RUN rustup target add wasm32-unknown-unknown
-RUN wasm-pack build --target=nodejs
+# RUN cargo build
+# # Install Rust WASM target before running wasm-pack
+# RUN rustup target add wasm32-unknown-unknown
+# RUN wasm-pack build --target=nodejs
 
-# Install Node.js dependencies
-WORKDIR /usr/src/app
-RUN npm install
-RUN npm run rust:build-nodejs
+# # Install Node.js dependencies
+# WORKDIR /usr/src/app
+# RUN npm install
+# RUN npm run rust:build-nodejs
