@@ -2442,7 +2442,10 @@ mod tests {
             deserialize_language_from_uint(1).unwrap(),
             Language::new_plutus_v2()
         );
-        assert!(deserialize_language_from_uint(2).is_err());
+        assert_eq!(
+            deserialize_language_from_uint(2).unwrap(),
+            Language::new_plutus_v3()
+        );
 
         assert_eq!(
             Language::from_bytes(Language::new_plutus_v1().to_bytes()).unwrap(),
@@ -2451,6 +2454,10 @@ mod tests {
         assert_eq!(
             Language::from_bytes(Language::new_plutus_v2().to_bytes()).unwrap(),
             Language::new_plutus_v2(),
+        );
+        assert_eq!(
+            Language::from_bytes(Language::new_plutus_v3().to_bytes()).unwrap(),
+            Language::new_plutus_v3(),
         );
     }
 
