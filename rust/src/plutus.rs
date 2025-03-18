@@ -41,6 +41,10 @@ impl PlutusScript {
         Self::new_with_version(bytes, &Language::new_plutus_v2())
     }
 
+    pub fn new_v3(bytes: Vec<u8>) -> PlutusScript {
+        Self::new_with_version(bytes, &Language::new_plutus_v3())
+    }
+
     /**
      * Creates a new Plutus script from the RAW bytes of the compiled script.
      * This does NOT include any CBOR encoding around these bytes (e.g. from "cborBytes" in cardano-cli)
@@ -104,6 +108,7 @@ impl PlutusScript {
         match self.language {
             LanguageKind::PlutusV1 => ScriptHashNamespace::PlutusScript,
             LanguageKind::PlutusV2 => ScriptHashNamespace::PlutusScriptV2,
+            LanguageKind::PlutusV3 => ScriptHashNamespace::PlutusScriptV3,
         }
     }
 
@@ -157,6 +162,7 @@ pub enum ScriptEnum {
     NativeScript(NativeScript),
     PlutusScriptV1(PlutusScript),
     PlutusScriptV2(PlutusScript),
+    PlutusScriptV3(PlutusScript),
 }
 
 #[wasm_bindgen]
@@ -167,6 +173,7 @@ pub enum ScriptKind {
     NativeScript,
     PlutusScriptV1,
     PlutusScriptV2,
+    PlutusScriptV3,
 }
 
 #[wasm_bindgen]
@@ -192,11 +199,16 @@ impl Script {
         Self(ScriptEnum::PlutusScriptV2(plutus_script.clone()))
     }
 
+    pub fn new_plutus_v3(plutus_script: &PlutusScript) -> Self {
+        Self(ScriptEnum::PlutusScriptV3(plutus_script.clone()))
+    }
+
     pub fn kind(&self) -> ScriptKind {
         match &self.0 {
             ScriptEnum::NativeScript(_) => ScriptKind::NativeScript,
             ScriptEnum::PlutusScriptV1(_) => ScriptKind::PlutusScriptV1,
             ScriptEnum::PlutusScriptV2(_) => ScriptKind::PlutusScriptV2,
+            ScriptEnum::PlutusScriptV3(_) => ScriptKind::PlutusScriptV3,
         }
     }
 
@@ -561,6 +573,7 @@ impl ExUnits {
 pub enum LanguageKind {
     PlutusV1 = 0,
     PlutusV2 = 1,
+    PlutusV3 = 2,
 }
 
 impl LanguageKind {
@@ -568,6 +581,7 @@ impl LanguageKind {
         match x {
             0 => Some(LanguageKind::PlutusV1),
             1 => Some(LanguageKind::PlutusV2),
+            2 => Some(LanguageKind::PlutusV3),
             _ => None,
         }
     }
@@ -598,6 +612,10 @@ impl Language {
 
     pub fn new_plutus_v2() -> Self {
         Self(LanguageKind::PlutusV2)
+    }
+
+    pub fn new_plutus_v3() -> Self {
+        Self(LanguageKind::PlutusV3)
     }
 
     pub fn kind(&self) -> LanguageKind {
@@ -1399,6 +1417,10 @@ impl cbor_event::se::Serialize for Script {
             }
             ScriptEnum::PlutusScriptV2(plutus_script) => {
                 serializer.write_unsigned_integer(2u64)?;
+                plutus_script.serialize(serializer)
+            }
+            ScriptEnum::PlutusScriptV3(plutus_script) => {
+                serializer.write_unsigned_integer(3u64)?;
                 plutus_script.serialize(serializer)
             }
         }

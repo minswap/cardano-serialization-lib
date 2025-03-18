@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/usr/src/app  # Mount local directory into the container
+    working_dir: /usr/src/app/rust  # Set default working directory
+    stdin_open: true  # Keep stdin open for interactive shell
+    tty: true         # Allocate a pseudo-TTY

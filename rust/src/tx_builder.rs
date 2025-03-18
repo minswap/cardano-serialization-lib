@@ -68,7 +68,7 @@ pub fn get_ex_units(
         Ok(redeemers_bytes) => Ok(Redeemers(
             redeemers_bytes
                 .iter()
-                .map(|r| Redeemer::from_bytes(r.to_vec()).unwrap())
+                .map(|(r, _)| Redeemer::from_bytes(r.clone()).unwrap())
                 .collect(),
         )),
         Err(err) => Err(JsError::from_str(&err.to_string())),
@@ -7318,6 +7318,29 @@ mod tests {
         // Setting script data hash removes the error
         let calc_result = tx_builder.calc_script_data_hash(&retained_cost_models);
         assert!(calc_result.is_err());
+    }
+
+    #[test]
+    fn test_plutus_v3() {
+        let mut tx_builder = create_default_tx_builder();
+        // let mut address = Address::from_bech32("addr_test1qp03v9yeg0vcfdhyn65ets2juearxpc3pmdhr0sxs0w6wh3sjf67h3yhrpxpv00zqfc7rtmr6mnmrcplfdkw5zhnl49qmyf0q5").unwrap();
+        let input = TransactionInput::new(&genesis_id(), 0);
+        let value = Value::new(&to_bignum(1_000_000));
+        let script = "585e585c01010029800aba2aba1aab9eaab9dab9a4888896600264653001300600198031803800cc0180092225980099b8748008c01cdd500144c8cc892898050009805180580098041baa0028b200c180300098019baa0068a4d13656400401";
+        let bytes = hex::decode(script).unwrap();
+        let plutus_script = PlutusScript::new_v3(bytes);
+        let datum = PlutusData::new_integer(&BigInt::from_str("42").unwrap());
+        let redeemer_datum = PlutusData::new_bytes(fake_bytes_32(2));
+        let redeemer = Redeemer::new(
+            &RedeemerTag::new_spend(),
+            &to_bignum(0),
+            &redeemer_datum,
+            &ExUnits::new(&to_bignum(1), &to_bignum(2)),
+        );
+        let witness = PlutusWitness::new(&plutus_script, &datum, &redeemer);
+        tx_builder.add_plutus_script_input(&witness, &input, &value);
+        tx_builder.set_fee(&to_bignum(42));
+        tx_builder.build().unwrap();
     }
 
     #[test]
