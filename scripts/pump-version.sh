@@ -19,7 +19,7 @@ echo "commit new version"
 git add \
   package.json package-lock.json \
   rust/Cargo.toml rust/Cargo.lock \
-  rust/pkg/cardano_serialization_lib.js.flow
+  -f rust/pkg/cardano_serialization_lib.js.flow
 git commit -m "publish version $version"
 
 echo "tag version"
