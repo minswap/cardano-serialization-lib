@@ -23,7 +23,7 @@ RUN curl -L -o wasm-pack.tar.gz https://github.com/rustwasm/wasm-pack/releases/d
 COPY . .
 
 # Build Rust WASM package
-WORKDIR /usr/src/app/rust
+# WORKDIR /usr/src/app/rust
 # RUN cargo build
 # # Install Rust WASM target before running wasm-pack
 # RUN rustup target add wasm32-unknown-unknown
