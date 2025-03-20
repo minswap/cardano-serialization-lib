@@ -70,6 +70,10 @@ impl PlutusScript {
         Self::from_bytes_with_version(bytes, &Language::new_plutus_v2())
     }
 
+    pub fn from_bytes_v3(bytes: Vec<u8>) -> Result<PlutusScript, JsError> {
+        Self::from_bytes_with_version(bytes, &Language::new_plutus_v3())
+    }
+
     /// Same as `.from_bytes` but will consider the script as requiring the specified language version
     pub fn from_bytes_with_version(
         bytes: Vec<u8>,
