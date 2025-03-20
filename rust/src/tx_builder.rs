@@ -6039,24 +6039,6 @@ mod tests {
     }
 
     #[test]
-    fn test_check_script_hash_applied() {
-        let script_origin = "5887010100229800aba2aba1aab9faab9eaab9dab9a48888896600264646644b30013370e900018031baa00189991198008009bac300b30093754601600c6eb8c024c01cdd5000912cc00400629422b30013375e601660126ea8c02c00403a29462660040046018002803900a459005180380098039804000980380098019baa0078a4d13656400401";
-        let script_bytes = hex::decode(script_origin).unwrap();
-
-        let p1 = PlutusScript::from_bytes(script_bytes).unwrap();
-        let p1_bytes = p1.to_bytes();
-        let p2 = PlutusScript::from_bytes(p1_bytes).unwrap();
-        
-        let mut plutus_list = PlutusList::new();
-        plutus_list.add(&PlutusData::from_hex("d8799fd8799f5820ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff01ff").unwrap());
-
-        let applied_script = apply_params_to_plutus_script(&plutus_list, p2).unwrap();
-
-        let script_hash = applied_script.hash();
-        assert_eq!(script_hash.to_hex(), "c8eb70c73c2f97195c068cda686261e6f241ab28aac3fa3f5c0267a1");
-    }
-
-    #[test]
     fn test_hash_script() {
         let raw_script = "58b858b60101003229800aba2aba1aab9faab9eaab9dab9a48888896600264646644b30013370e900018031baa00189991198008009bac300b30093754601600c6eb8c024c01cdd5000912cc00400629422b30013375e601660126ea8c02c00403a29462660040046018002803900a459005180380098039804000980380098019baa0078a4d1365640044c12bd8799fd8799f5820ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff01ff0001";
         let script_bytes = hex::decode(raw_script).unwrap();

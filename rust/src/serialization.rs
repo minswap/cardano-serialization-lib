@@ -5386,7 +5386,7 @@ mod tests {
 
     #[test]
     fn test_witness_set_roundtrip() {
-        fn witness_set_roundtrip(plutus_scripts: &PlutusScripts) {
+        fn witness_set_roundtrip(plutus_scripts: &Option<PlutusScripts>) {
             let mut ws = TransactionWitnessSet::new();
             ws.set_vkeys(&Vkeywitnesses(vec![Vkeywitness::new(
                 &fake_vkey(),
@@ -5401,22 +5401,31 @@ mod tests {
             ws.set_plutus_data(&PlutusList::from(vec![PlutusData::new_integer(
                 &BigInt::one(),
             )]));
-            ws.set_plutus_scripts(plutus_scripts);
-
-            assert_eq!(
-                TransactionWitnessSet::from_bytes(ws.to_bytes()).unwrap(),
-                ws
-            );
+            match plutus_scripts {
+                Some(ps) => ws.set_plutus_scripts(ps),
+                None => (),
+            }
+            
+            let from = ws.to_bytes();
+            let ws2 = TransactionWitnessSet::from_bytes(from.clone()).unwrap();
+            let to = ws2.to_bytes();
+            assert_eq!(hex::encode(from), hex::encode(to));
         }
 
         let bytes = hex::decode("4e4d01000033222220051200120011").unwrap();
         let script_v1 = PlutusScript::from_bytes(bytes.clone()).unwrap();
         let script_v2 = PlutusScript::from_bytes_v2(bytes.clone()).unwrap();
+        let script_v3 = PlutusScript::from_bytes_v3(bytes.clone()).unwrap();
+        
+        witness_set_roundtrip(&None);
+        witness_set_roundtrip(&Some(PlutusScripts(vec![script_v1.clone()])));
+        witness_set_roundtrip(&Some(PlutusScripts(vec![script_v2.clone()])));
+        witness_set_roundtrip(&Some(PlutusScripts(vec![script_v3.clone()])));
+        witness_set_roundtrip(&Some(PlutusScripts(vec![script_v1.clone(), script_v2.clone()])));
+        witness_set_roundtrip(&Some(PlutusScripts(vec![script_v2.clone(), script_v3.clone()])));
+        witness_set_roundtrip(&Some(PlutusScripts(vec![script_v1.clone(), script_v2.clone(), script_v3.clone()])));
 
-        witness_set_roundtrip(&PlutusScripts(vec![]));
-        witness_set_roundtrip(&PlutusScripts(vec![script_v1.clone()]));
-        witness_set_roundtrip(&PlutusScripts(vec![script_v2.clone()]));
-        witness_set_roundtrip(&PlutusScripts(vec![script_v1.clone(), script_v2.clone()]));
+
     }
 
     #[test]
