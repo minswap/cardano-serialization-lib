@@ -6030,6 +6030,25 @@ mod tests {
     }
 
     #[test]
+    fn test_check_script_hash_origin() {
+        let script_origin = "5887010100229800aba2aba1aab9faab9eaab9dab9a48888896600264646644b30013370e900018031baa00189991198008009bac300b30093754601600c6eb8c024c01cdd5000912cc00400629422b30013375e601660126ea8c02c00403a29462660040046018002803900a459005180380098039804000980380098019baa0078a4d13656400401";
+        let script_bytes = hex::decode(script_origin).unwrap();
+        let plutus_script = PlutusScript::new_v3(script_bytes);
+        let script_hash = plutus_script.hash();
+        assert_eq!(script_hash.to_hex(), "b1a80f2cee058198c38a5f16ab14180fbe9a570c6745dbc1969fbcdb");
+    }
+
+    #[test]
+    fn test_hash_script() {
+        let raw_script = "58b858b60101003229800aba2aba1aab9faab9eaab9dab9a48888896600264646644b30013370e900018031baa00189991198008009bac300b30093754601600c6eb8c024c01cdd5000912cc00400629422b30013375e601660126ea8c02c00403a29462660040046018002803900a459005180380098039804000980380098019baa0078a4d1365640044c12bd8799fd8799f5820ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff01ff0001";
+        let script_bytes = hex::decode(raw_script).unwrap();
+        
+        let plutus_script = PlutusScript::from_bytes_with_version(script_bytes, &Language::new_plutus_v3()).unwrap();
+        let a = plutus_script.hash().to_hex();
+        assert_eq!(a, "c8eb70c73c2f97195c068cda686261e6f241ab28aac3fa3f5c0267a1");
+    }
+
+    #[test]
     fn test_adding_plutus_script_input() {
         let mut tx_builder = create_reallistic_tx_builder();
         let (script1, _) = plutus_script_and_hash(0);
@@ -6056,6 +6075,25 @@ mod tests {
         assert_eq!(tx.witness_set.plutus_data.unwrap().get(0), datum);
         assert!(tx.witness_set.redeemers.is_some());
         assert_eq!(tx.witness_set.redeemers.unwrap().get(0), redeemer);
+    }
+
+    #[test]
+    fn test_transaction_witness_set() {
+        let bytes = hex::decode("4e4d01000033222220051200120011").unwrap();
+        let s3: PlutusScript = PlutusScript::from_bytes_v3(bytes.clone()).unwrap();
+        let mut plutus_scripts = PlutusScripts::new();
+        plutus_scripts.add(&s3);
+
+        let p1 = plutus_scripts.to_bytes();
+        assert_eq!(hex::encode(p1), "814e4d01000033222220051200120011");
+
+        let mut witness_set = TransactionWitnessSet::new();
+        witness_set.set_plutus_scripts(&plutus_scripts);
+        let r1 = witness_set.to_bytes();
+        assert_eq!(hex::encode(r1.clone()), "a107814e4d01000033222220051200120011");
+        let witness_set2 = TransactionWitnessSet::from_bytes(r1).unwrap();
+        let r2 = witness_set2.to_bytes();
+        assert_eq!(hex::encode(r2), "a107814e4d01000033222220051200120011");
     }
 
     #[test]
