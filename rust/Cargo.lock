@@ -124,7 +124,7 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "cardano-serialization-lib"
-version = "11.1.0-minswap.26"
+version = "11.1.0-minswap.27"
 dependencies = [
  "bech32 0.7.3",
  "cbor_event",
