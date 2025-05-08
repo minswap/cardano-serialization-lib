@@ -35,7 +35,7 @@ itertools = "0.10.1"
 rand = "0.8.4"
 schemars = "0.8.8"
 serde = { version = "1.0", features = ["derive"] }
-uplc = { git = "https://github.com/aiken-lang/aiken.git", rev = "900bf91216deff19be9b3582a9fccd03be0d485c", default-features = false }
+uplc = { git = "https://github.com/aiken-lang/aiken.git", rev = "3d77b5c378ce404cddd9a1f111906d72fd46fc83", default-features = false }
 
 # non-wasm
 [target.'cfg(not(all(target_arch = "wasm32", not(target_os = "emscripten"))))'.dependencies]

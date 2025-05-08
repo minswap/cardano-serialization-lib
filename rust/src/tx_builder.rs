@@ -68,7 +68,7 @@ pub fn get_ex_units(
         Ok(redeemers_bytes) => Ok(Redeemers(
             redeemers_bytes
                 .iter()
-                .map(|(r, _)| Redeemer::from_bytes(r.clone()).unwrap())
+                .map(|r| Redeemer::from_bytes(r.to_vec()).unwrap())
                 .collect(),
         )),
         Err(err) => Err(JsError::from_str(&err.to_string())),
