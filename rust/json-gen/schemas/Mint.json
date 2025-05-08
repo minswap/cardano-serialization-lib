@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Mint",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/definitions/MintAssets"
+  },
+  "definitions": {
+    "MintAssets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}
