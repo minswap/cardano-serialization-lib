@@ -9,3 +9,4 @@ rust/json-gen/target
 rust/json-gen/output
 rust/json-gen/schema
 .DS_Store
+rust/pkg
