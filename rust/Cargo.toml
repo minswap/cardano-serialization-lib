@@ -2,6 +2,7 @@
 name = "cardano-serialization-lib"
 version = "11.1.0-minswap.27"
 edition = "2018"
+rust-version = "1.86"
 authors = ["EMURGO"]
 license = "MIT"
 description = "(De)serialization functions for the Cardano blockchain along with related utility functions"
