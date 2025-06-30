@@ -3,6 +3,7 @@ use crate::utils::*;
 use address::*;
 use crypto::*;
 use error::*;
+use core::panic;
 use std::io::{Seek, SeekFrom};
 
 // This file was code-generated using an experimental CDDL to rust tool:
@@ -1681,6 +1682,151 @@ impl cbor_event::se::Serialize for MoveInstantaneousRewardsCert {
     }
 }
 
+pub fn check_index(
+    actual_index: u64,
+    desired_index: Option<u64>,
+    name: &'static str,
+) -> Result<(), DeserializeError> {
+    let desired_index = desired_index
+        .ok_or(DeserializeFailure::NoVariantMatched)
+        .map_err(|e| DeserializeError::from(e))?;
+    if actual_index != desired_index {
+        return Err(DeserializeFailure::FixedValueMismatch {
+            found: Key::Uint(actual_index),
+            expected: Key::Uint(desired_index),
+        })
+        .map_err(|e| DeserializeError::from(e).annotate(name));
+    }
+
+    Ok(())
+}
+
+pub fn deserialize_and_check_index<R: BufRead + Seek>(
+    raw: &mut Deserializer<R>,
+    desired_index: Option<u64>,
+    name: &'static str,
+) -> Result<u64, DeserializeError> {
+    let actual_index = raw.unsigned_integer()?;
+    check_index(actual_index, desired_index, name)?;
+    Ok(actual_index)
+}
+
+pub fn serialize_and_check_index<'se, W: Write>(
+    serializer: &'se mut Serializer<W>,
+    index: Option<u64>,
+    name: &'static str,
+) -> cbor_event::Result<&'se mut Serializer<W>> {
+    match index {
+        Some(index) => serializer.write_unsigned_integer(index),
+        None => Err(cbor_event::Error::CustomError(format!(
+            "unknown index of {}",
+            name
+        ))),
+    }
+}
+
+impl cbor_event::se::Serialize for DRep {
+    fn serialize<'se, W: Write>(
+        &self,
+        serializer: &'se mut Serializer<W>,
+    ) -> cbor_event::Result<&'se mut Serializer<W>> {
+        serializer.write_array(cbor_event::Len::Len(2))?;
+        match &self.0 {
+            DRepEnum::KeyHash(key_hash) => {
+                serializer.write_array(cbor_event::Len::Len(2))?;
+                serializer.write_unsigned_integer(0u64)?;
+                key_hash.serialize(serializer);
+            }
+            DRepEnum::ScriptHash(script_hash) => {
+                serializer.write_array(cbor_event::Len::Len(2))?;
+                serializer.write_unsigned_integer(1u64)?;
+                script_hash.serialize(serializer);
+            }
+            DRepEnum::AlwaysAbstain => {
+                serializer.write_array(cbor_event::Len::Len(1))?;
+                serializer.write_unsigned_integer(2u64);
+            }
+            DRepEnum::AlwaysNoConfidence => {
+                serializer.write_array(cbor_event::Len::Len(1))?;
+                serializer.write_unsigned_integer(3u64);
+            }
+        }
+        Ok(serializer)
+    }
+}
+
+impl Deserialize for DRep {
+    fn deserialize<R: BufRead + Seek>(raw: &mut Deserializer<R>) -> Result<Self, DeserializeError> {
+        (|| -> Result<_, DeserializeError> {
+            let drep_enum = DRepEnum::deserialize(raw)?;
+            Ok(Self(drep_enum))
+        })()
+        .map_err(|e| e.annotate("DRep"))
+    }
+}
+
+impl Deserialize for DRepEnum {
+    fn deserialize<R: BufRead + Seek>(raw: &mut Deserializer<R>) -> Result<Self, DeserializeError> {
+        (|| -> Result<_, DeserializeError> {
+            let len = raw.array()?;
+            if let cbor_event::Len::Len(n) = len {
+                if n != 2 && n != 1 {
+                    return Err(DeserializeFailure::CBOR(cbor_event::Error::WrongLen(
+                        2,
+                        len,
+                        "[id, hash] or [id] (for abstain and no confidence)",
+                    ))
+                    .into());
+                }
+            }
+
+            let drep = match raw.unsigned_integer()? {
+                0 => {
+                    let key_hash =
+                        Ed25519KeyHash::deserialize(raw).map_err(|e| e.annotate("key_hash"))?;
+                    DRepEnum::KeyHash(key_hash)
+                }
+                1 => {
+                    let script_hash =
+                        ScriptHash::deserialize(raw).map_err(|e| e.annotate("script_hash"))?;
+                    DRepEnum::ScriptHash(script_hash)
+                }
+                2 => DRepEnum::AlwaysAbstain,
+                3 => DRepEnum::AlwaysNoConfidence,
+                n => {
+                    return Err(DeserializeFailure::FixedValuesMismatch {
+                        found: Key::Uint(n),
+                        expected: vec![Key::Uint(0), Key::Uint(1), Key::Uint(2), Key::Uint(3)],
+                    }
+                    .into())
+                }
+            };
+            if let cbor_event::Len::Indefinite = len {
+                if raw.special()? != CBORSpecial::Break {
+                    return Err(DeserializeFailure::EndingBreakMissing.into());
+                }
+            }
+            Ok(drep)
+        })()
+        .map_err(|e| e.annotate("DRepEnum"))
+    }
+}
+
+impl cbor_event::se::Serialize for VoteDelegation {
+    fn serialize<'se, W: Write>(
+        &self,
+        serializer: &'se mut Serializer<W>,
+    ) -> cbor_event::Result<&'se mut Serializer<W>> {
+        serializer.write_array(cbor_event::Len::Len(3))?;
+
+        serialize_and_check_index(serializer, Some(9u64), "VoteDelegation")?;
+
+        self.stake_credential.serialize(serializer)?;
+        self.drep.serialize(serializer)?;
+        Ok(serializer)
+    }
+}
+
 impl SerializeEmbeddedGroup for MoveInstantaneousRewardsCert {
     fn serialize_as_embedded_group<'se, W: Write>(
         &self,
@@ -1745,6 +1891,83 @@ impl DeserializeEmbeddedGroup for MoveInstantaneousRewardsCert {
     }
 }
 
+pub fn check_len(
+    len: cbor_event::Len,
+    expected: u64,
+    struct_description: &'static str,
+) -> Result<(), DeserializeError> {
+    if let cbor_event::Len::Len(n) = len {
+        if n != expected {
+            return Err(DeserializeFailure::CBOR(cbor_event::Error::WrongLen(
+                expected as u64,
+                len,
+                struct_description,
+            ))
+            .into());
+        }
+    }
+    Ok(())
+}
+
+impl SerializeEmbeddedGroup for VoteDelegation {
+    fn serialize_as_embedded_group<'se, W: Write>(
+        &self,
+        serializer: &'se mut Serializer<W>,
+    ) -> cbor_event::Result<&'se mut Serializer<W>> {
+        serializer.write_unsigned_integer(15u64)?;
+        self.stake_credential.serialize(serializer)?;
+        self.drep.serialize(serializer)?;
+        Ok(serializer)
+    }
+}
+
+impl Deserialize for VoteDelegation {
+    fn deserialize<R: BufRead + Seek>(raw: &mut Deserializer<R>) -> Result<Self, DeserializeError> {
+        (|| -> Result<_, DeserializeError> {
+            let len = raw.array()?;
+            let ret = Self::deserialize_as_embedded_group(raw, len);
+            match len {
+                cbor_event::Len::Len(_) =>
+                /* TODO: check finite len somewhere */
+                {
+                    ()
+                }
+                cbor_event::Len::Indefinite => match raw.special()? {
+                    CBORSpecial::Break =>
+                    /* it's ok */
+                    {
+                        ()
+                    }
+                    _ => return Err(DeserializeFailure::EndingBreakMissing.into()),
+                },
+            }
+            ret
+        })()
+        .map_err(|e| e.annotate("VoteDelegation"))
+    }
+}
+
+impl DeserializeEmbeddedGroup for VoteDelegation {
+    fn deserialize_as_embedded_group<R: BufRead + Seek>(
+        raw: &mut Deserializer<R>,
+        len: cbor_event::Len,
+    ) -> Result<Self, DeserializeError> {
+        check_len(len, 3, "(cert_index, stake_credential, drep)")?;
+        let cert_index = Some(9u64);
+        deserialize_and_check_index(raw, cert_index, "cert_index")?;
+
+        let stake_credential =
+            StakeCredential::deserialize(raw).map_err(|e| e.annotate("stake_credential"))?;
+
+        let drep = DRep::deserialize(raw).map_err(|e| e.annotate("drep"))?;
+
+        Ok(VoteDelegation {
+            stake_credential,
+            drep,
+        })
+    }
+}
+
 impl cbor_event::se::Serialize for CertificateEnum {
     fn serialize<'se, W: Write>(
         &self,
@@ -1758,6 +1981,8 @@ impl cbor_event::se::Serialize for CertificateEnum {
             CertificateEnum::PoolRetirement(x) => x.serialize(serializer),
             CertificateEnum::GenesisKeyDelegation(x) => x.serialize(serializer),
             CertificateEnum::MoveInstantaneousRewardsCert(x) => x.serialize(serializer),
+            CertificateEnum::VoteDelegation(x) => x.serialize(serializer),
+            _ => panic!("Unknown variant in CertificateEnum"),
         }
     }
 }

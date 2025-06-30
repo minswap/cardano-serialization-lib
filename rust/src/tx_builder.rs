@@ -101,6 +101,12 @@ fn witness_keys_for_cert(cert_enum: &Certificate) -> RequiredSigners {
         }
         // not witness as there is no single core node or genesis key that posts the certificate
         CertificateEnum::MoveInstantaneousRewardsCert(_cert) => {}
+        CertificateEnum::VoteDelegation(cert) => {
+            if let Some(key_hash) = cert.stake_credential().to_keyhash() {
+                set.add(&key_hash);
+            }
+        }
+        _ => {}
     }
     set
 }

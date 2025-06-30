@@ -1000,6 +1000,8 @@ impl MoveInstantaneousRewardsCert {
     }
 }
 
+
+
 #[wasm_bindgen]
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CertificateKind {
@@ -1010,6 +1012,16 @@ pub enum CertificateKind {
     PoolRetirement,
     GenesisKeyDelegation,
     MoveInstantaneousRewardsCert,
+    CommitteeHotAuth,
+    CommitteeColdResign,
+    DRepDeregistration,
+    DRepRegistration,
+    DRepUpdate,
+    StakeAndVoteDelegation,
+    StakeRegistrationAndDelegation,
+    StakeVoteRegistrationAndDelegation,
+    VoteDelegation,
+    VoteRegistrationAndDelegation,
 }
 
 #[derive(
@@ -1023,7 +1035,143 @@ pub enum CertificateEnum {
     PoolRetirement(PoolRetirement),
     GenesisKeyDelegation(GenesisKeyDelegation),
     MoveInstantaneousRewardsCert(MoveInstantaneousRewardsCert),
+    CommitteeHotAuth(CommitteeHotAuth),
+    CommitteeColdResign(CommitteeColdResign),
+    DRepDeregistration(DRepDeregistration),
+    DRepRegistration(DRepRegistration),
+    DRepUpdate(DRepUpdate),
+    StakeAndVoteDelegation(StakeAndVoteDelegation),
+    StakeRegistrationAndDelegation(StakeRegistrationAndDelegation),
+    StakeVoteRegistrationAndDelegation(StakeVoteRegistrationAndDelegation),
+    VoteDelegation(VoteDelegation),
+    VoteRegistrationAndDelegation(VoteRegistrationAndDelegation),
 }
+
+// Dummy struct definitions for missing types
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct CommitteeHotAuth;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct CommitteeColdResign;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct DRepDeregistration;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct DRepRegistration;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct DRepUpdate;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct StakeAndVoteDelegation;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct StakeRegistrationAndDelegation;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct StakeVoteRegistrationAndDelegation;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub enum DRepEnum {
+    KeyHash(Ed25519KeyHash),
+    ScriptHash(ScriptHash),
+    AlwaysAbstain,
+    AlwaysNoConfidence,
+}
+
+#[wasm_bindgen]
+#[derive(Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub enum DRepKind {
+    KeyHash,
+    ScriptHash,
+    AlwaysAbstain,
+    AlwaysNoConfidence,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct DRep(DRepEnum);
+
+impl_to_from!(DRep);
+
+#[wasm_bindgen]
+impl DRep {
+    pub fn new_key_hash(key_hash: &Ed25519KeyHash) -> Self {
+        Self(DRepEnum::KeyHash(key_hash.clone()))
+    }
+
+    pub fn new_script_hash(script_hash: &ScriptHash) -> Self {
+        Self(DRepEnum::ScriptHash(script_hash.clone()))
+    }
+
+    pub fn new_always_abstain() -> Self {
+        Self(DRepEnum::AlwaysAbstain)
+    }
+
+    pub fn new_always_no_confidence() -> Self {
+        Self(DRepEnum::AlwaysNoConfidence)
+    }
+
+    pub fn kind(&self) -> DRepKind {
+        match &self.0 {
+            DRepEnum::KeyHash(_) => DRepKind::KeyHash,
+            DRepEnum::ScriptHash(_) => DRepKind::ScriptHash,
+            DRepEnum::AlwaysAbstain => DRepKind::AlwaysAbstain,
+            DRepEnum::AlwaysNoConfidence => DRepKind::AlwaysNoConfidence,
+        }
+    }
+
+    pub fn to_key_hash(&self) -> Option<Ed25519KeyHash> {
+        match &self.0 {
+            DRepEnum::KeyHash(keyhash) => Some(keyhash.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn to_script_hash(&self) -> Option<ScriptHash> {
+        match &self.0 {
+            DRepEnum::ScriptHash(scripthash) => Some(scripthash.clone()),
+            _ => None,
+        }
+    }
+}
+
+#[wasm_bindgen]
+#[derive(
+    Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
+)]
+pub struct VoteDelegation {
+    stake_credential: StakeCredential,
+    drep: DRep,
+}
+
+impl_to_from!(VoteDelegation);
+
+#[wasm_bindgen]
+impl VoteDelegation {
+    pub fn stake_credential(&self) -> StakeCredential {
+        self.stake_credential.clone()
+    }
+
+    pub fn drep(&self) -> DRep {
+        self.drep.clone()
+    }
+
+    pub fn new(stake_credential: &StakeCredential, drep: &DRep) -> Self {
+        Self {
+            stake_credential: stake_credential.clone(),
+            drep: drep.clone(),
+        }
+    }
+
+    pub fn has_script_credentials(&self) -> bool {
+        self.stake_credential.has_script_hash()
+    }
+}
+
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct VoteRegistrationAndDelegation;
 
 #[wasm_bindgen]
 #[derive(
@@ -1035,6 +1183,10 @@ impl_to_from!(Certificate);
 
 #[wasm_bindgen]
 impl Certificate {
+    pub fn new_vote_delegation(vote_delegation: &VoteDelegation) -> Self {
+        Self(CertificateEnum::VoteDelegation(vote_delegation.clone()))
+    }
+
     pub fn new_stake_registration(stake_registration: &StakeRegistration) -> Self {
         Self(CertificateEnum::StakeRegistration(
             stake_registration.clone(),
@@ -1084,6 +1236,9 @@ impl Certificate {
             CertificateEnum::MoveInstantaneousRewardsCert(_) => {
                 CertificateKind::MoveInstantaneousRewardsCert
             }
+            CertificateEnum::VoteDelegation(_) => CertificateKind::VoteDelegation,
+            // For all other variants, return a default or placeholder value, or handle as needed.
+            _ => panic!("CertificateKind not defined for this certificate variant"),
         }
     }
 
