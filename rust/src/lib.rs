@@ -1089,6 +1089,7 @@ pub enum DRepKind {
     AlwaysNoConfidence,
 }
 
+#[wasm_bindgen]
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
 pub struct DRep(DRepEnum);
 
