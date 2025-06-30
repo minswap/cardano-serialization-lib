@@ -2057,6 +2057,25 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_vote_delegation() {
+        let key_hash = Ed25519KeyHash::from_hex("508f5c55f14d9ed00070eb9fb2f65b238b389af5bb881d5cbe1829e2").unwrap();
+        let drep = &DRep::new_key_hash(&key_hash);
+
+        let owner_key_hash = Ed25519KeyHash::from_hex("75ee8ab1dc2ccf6ad5929cd24b10e7be81a64662ae958a409e9bf5e3").unwrap();
+        let stake_credential = StakeCredential::from_keyhash(&owner_key_hash);
+
+        let vote_delegation = VoteDelegation::new(
+            &stake_credential,
+            drep,
+        );
+
+        let cert = Certificate::new_vote_delegation(&vote_delegation);
+        
+        let cert_hex = cert.to_hex();
+        assert_eq!(cert_hex, "83098200581c75ee8ab1dc2ccf6ad5929cd24b10e7be81a64662ae958a409e9bf5e38200581c508f5c55f14d9ed00070eb9fb2f65b238b389af5bb881d5cbe1829e2");
+    }
+
+    #[test]
     fn check_fake_private_key() {
         let fpk = fake_private_key();
         assert_eq!(
