@@ -1730,25 +1730,24 @@ impl cbor_event::se::Serialize for DRep {
         &self,
         serializer: &'se mut Serializer<W>,
     ) -> cbor_event::Result<&'se mut Serializer<W>> {
-        serializer.write_array(cbor_event::Len::Len(2))?;
         match &self.0 {
             DRepEnum::KeyHash(key_hash) => {
                 serializer.write_array(cbor_event::Len::Len(2))?;
                 serializer.write_unsigned_integer(0u64)?;
-                key_hash.serialize(serializer);
+                key_hash.serialize(serializer)?;
             }
             DRepEnum::ScriptHash(script_hash) => {
                 serializer.write_array(cbor_event::Len::Len(2))?;
                 serializer.write_unsigned_integer(1u64)?;
-                script_hash.serialize(serializer);
+                script_hash.serialize(serializer)?;
             }
             DRepEnum::AlwaysAbstain => {
                 serializer.write_array(cbor_event::Len::Len(1))?;
-                serializer.write_unsigned_integer(2u64);
+                serializer.write_unsigned_integer(2u64)?;
             }
             DRepEnum::AlwaysNoConfidence => {
                 serializer.write_array(cbor_event::Len::Len(1))?;
-                serializer.write_unsigned_integer(3u64);
+                serializer.write_unsigned_integer(3u64)?;
             }
         }
         Ok(serializer)

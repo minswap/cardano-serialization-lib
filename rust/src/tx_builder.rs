@@ -2050,6 +2050,13 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_drep() {
+        let drep= DRep::new_always_abstain();
+        let drep_hex = drep.to_hex();
+        assert_eq!(drep_hex, "8102");
+    }
+
+    #[test]
     fn check_fake_private_key() {
         let fpk = fake_private_key();
         assert_eq!(
