@@ -21,21 +21,38 @@ jobs:
             # Calculate and append the next version directly into GITHUB_ENV in one line
             echo "NEXT_VERSION=$(echo "$current_version" | awk -F'[-.]' '{print $1"."$2"."$3"-minswap."$5+1}')" >> "$GITHUB_ENV"
       
+      - name: Build Docker Image
+        run: |
+          docker build -t cardano-csl-builder .
+
       - name: Authenticate with private NPM package
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
-
-      - name: Install Dependencies
-        run: |
-          npm install --ignore-scripts
-          npm install -g wasm-pack@0.10.1
 
       - name: Configure Git
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@users.noreply.github.com"
-          
-      - name: Bump Version and Publish
+
+      - name: Make pump version script executable
+        run: chmod +x ./docker-pump-version.sh
+
+      - name: Run Version Bump and Publish in Docker
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/usr/src/app \
+            -w /usr/src/app \
+            -e NPM_TOKEN="${{ secrets.NPM_TOKEN }}" \
+            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            cardano-csl-builder \
+            /bin/bash -c "
+              # Install Node.js dependencies
+              npm install --ignore-scripts
+              npm install -g --force wasm-pack@0.10.1
+
+              # Run the pump version script
+              ./docker-pump-version.sh ${{ env.NEXT_VERSION }}
+            "
+
+      - name: Bump Version
         run: |
           ./scripts/pump-version.sh ${{ env.NEXT_VERSION }}
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

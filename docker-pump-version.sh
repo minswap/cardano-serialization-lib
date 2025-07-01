@@ -11,19 +11,10 @@ sed -i -E 's/"version": ".+minswap.+"/"version": "'"$version"'"/' package-lock.j
 sed -i -E 's/version = ".+minswap.+"/version = "'"$version"'"/' rust/Cargo.toml
 sed -i -E 's/version = ".+minswap.+"/version = "'"$version"'"/' rust/Cargo.lock
 
-echo "commit new version"
-git add \
-  package.json package-lock.json \
-  rust/Cargo.toml rust/Cargo.lock \
-  -f rust/pkg/cardano_serialization_lib.js.flow
-git commit -m "publish version $version"
+echo "Authenticate with NPM"
+echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
 
-echo "tag version"
-git tag "$version"
+echo "publish"
 
-echo "push to remote"
-git push origin minswap-11
-git push origin "$version"
-
-echo "clean"
-rm -rf rust/json-gen/schemas
+npm run js:publish-nodejs:prod
+npm run js:publish-browser:prod
