@@ -43,86 +43,6 @@ declare export function min_script_fee(
 ): BigNum;
 
 /**
- * @param {string} password
- * @param {string} salt
- * @param {string} nonce
- * @param {string} data
- * @returns {string}
- */
-declare export function encrypt_with_password(
-  password: string,
-  salt: string,
-  nonce: string,
-  data: string
-): string;
-
-/**
- * @param {string} password
- * @param {string} data
- * @returns {string}
- */
-declare export function decrypt_with_password(
-  password: string,
-  data: string
-): string;
-
-/**
- * @param {Uint8Array} bytes
- * @returns {TransactionMetadatum}
- */
-declare export function encode_arbitrary_bytes_as_metadatum(
-  bytes: Uint8Array
-): TransactionMetadatum;
-
-/**
- * @param {TransactionMetadatum} metadata
- * @returns {Uint8Array}
- */
-declare export function decode_arbitrary_bytes_from_metadatum(
-  metadata: TransactionMetadatum
-): Uint8Array;
-
-/**
- * @param {string} json
- * @param {number} schema
- * @returns {TransactionMetadatum}
- */
-declare export function encode_json_str_to_metadatum(
-  json: string,
-  schema: number
-): TransactionMetadatum;
-
-/**
- * @param {TransactionMetadatum} metadatum
- * @param {number} schema
- * @returns {string}
- */
-declare export function decode_metadatum_to_json_str(
-  metadatum: TransactionMetadatum,
-  schema: number
-): string;
-
-/**
- * @param {string} json
- * @param {number} schema
- * @returns {PlutusData}
- */
-declare export function encode_json_str_to_plutus_datum(
-  json: string,
-  schema: number
-): PlutusData;
-
-/**
- * @param {PlutusData} datum
- * @param {number} schema
- * @returns {string}
- */
-declare export function decode_plutus_datum_to_json_str(
-  datum: PlutusData,
-  schema: number
-): string;
-
-/**
  * @param {TransactionHash} tx_body_hash
  * @param {ByronAddress} addr
  * @param {LegacyDaedalusPrivateKey} key
@@ -261,6 +181,42 @@ declare export function encode_json_str_to_native_script(
 ): NativeScript;
 
 /**
+ * @param {Uint8Array} bytes
+ * @returns {TransactionMetadatum}
+ */
+declare export function encode_arbitrary_bytes_as_metadatum(
+  bytes: Uint8Array
+): TransactionMetadatum;
+
+/**
+ * @param {TransactionMetadatum} metadata
+ * @returns {Uint8Array}
+ */
+declare export function decode_arbitrary_bytes_from_metadatum(
+  metadata: TransactionMetadatum
+): Uint8Array;
+
+/**
+ * @param {string} json
+ * @param {number} schema
+ * @returns {TransactionMetadatum}
+ */
+declare export function encode_json_str_to_metadatum(
+  json: string,
+  schema: number
+): TransactionMetadatum;
+
+/**
+ * @param {TransactionMetadatum} metadatum
+ * @param {number} schema
+ * @returns {string}
+ */
+declare export function decode_metadatum_to_json_str(
+  metadatum: TransactionMetadatum,
+  schema: number
+): string;
+
+/**
  * @param {PlutusList} params
  * @param {PlutusScript} plutus_script
  * @returns {PlutusScript}
@@ -291,6 +247,50 @@ declare export function get_ex_units(
 ): Redeemers;
 
 /**
+ * @param {string} password
+ * @param {string} salt
+ * @param {string} nonce
+ * @param {string} data
+ * @returns {string}
+ */
+declare export function encrypt_with_password(
+  password: string,
+  salt: string,
+  nonce: string,
+  data: string
+): string;
+
+/**
+ * @param {string} password
+ * @param {string} data
+ * @returns {string}
+ */
+declare export function decrypt_with_password(
+  password: string,
+  data: string
+): string;
+
+/**
+ * @param {string} json
+ * @param {number} schema
+ * @returns {PlutusData}
+ */
+declare export function encode_json_str_to_plutus_datum(
+  json: string,
+  schema: number
+): PlutusData;
+
+/**
+ * @param {PlutusData} datum
+ * @param {number} schema
+ * @returns {string}
+ */
+declare export function decode_plutus_datum_to_json_str(
+  datum: PlutusData,
+  schema: number
+): string;
+
+/**
  */
 
 declare export var CertificateKind: {|
@@ -301,6 +301,26 @@ declare export var CertificateKind: {|
   +PoolRetirement: 4, // 4
   +GenesisKeyDelegation: 5, // 5
   +MoveInstantaneousRewardsCert: 6, // 6
+  +CommitteeHotAuth: 7, // 7
+  +CommitteeColdResign: 8, // 8
+  +DRepDeregistration: 9, // 9
+  +DRepRegistration: 10, // 10
+  +DRepUpdate: 11, // 11
+  +StakeAndVoteDelegation: 12, // 12
+  +StakeRegistrationAndDelegation: 13, // 13
+  +StakeVoteRegistrationAndDelegation: 14, // 14
+  +VoteDelegation: 15, // 15
+  +VoteRegistrationAndDelegation: 16, // 16
+|};
+
+/**
+ */
+
+declare export var DRepKind: {|
+  +KeyHash: 0, // 0
+  +ScriptHash: 1, // 1
+  +AlwaysAbstain: 2, // 2
+  +AlwaysNoConfidence: 3, // 3
 |};
 
 /**
@@ -363,11 +383,12 @@ declare export var NetworkIdKind: {|
 |};
 
 /**
+ * Used to choosed the schema for a script JSON string
  */
 
-declare export var StakeCredKind: {|
-  +Key: 0, // 0
-  +Script: 1, // 1
+declare export var ScriptSchema: {|
+  +Wallet: 0, // 0
+  +Node: 1, // 1
 |};
 
 /**
@@ -388,6 +409,16 @@ declare export var MetadataJsonSchema: {|
   +NoConversions: 0, // 0
   +BasicConversions: 1, // 1
   +DetailedSchema: 2, // 2
+|};
+
+/**
+ */
+
+declare export var CoinSelectionStrategyCIP2: {|
+  +LargestFirst: 0, // 0
+  +RandomImprove: 1, // 1
+  +LargestFirstMultiAsset: 2, // 2
+  +RandomImproveMultiAsset: 3, // 3
 |};
 
 /**
@@ -448,22 +479,11 @@ declare export var PlutusDatumSchema: {|
 |};
 
 /**
- * Used to choosed the schema for a script JSON string
  */
 
-declare export var ScriptSchema: {|
-  +Wallet: 0, // 0
-  +Node: 1, // 1
-|};
-
-/**
- */
-
-declare export var CoinSelectionStrategyCIP2: {|
-  +LargestFirst: 0, // 0
-  +RandomImprove: 1, // 1
-  +LargestFirstMultiAsset: 2, // 2
-  +RandomImproveMultiAsset: 3, // 3
+declare export var StakeCredKind: {|
+  +Key: 0, // 0
+  +Script: 1, // 1
 |};
 
 /**
@@ -1649,6 +1669,12 @@ declare export class Certificate {
   static from_json(json: string): Certificate;
 
   /**
+   * @param {VoteDelegation} vote_delegation
+   * @returns {Certificate}
+   */
+  static new_vote_delegation(vote_delegation: VoteDelegation): Certificate;
+
+  /**
    * @param {StakeRegistration} stake_registration
    * @returns {Certificate}
    */
@@ -2102,6 +2128,86 @@ declare export class DNSRecordSRV {
    * @returns {string}
    */
   record(): string;
+}
+/**
+ */
+declare export class DRep {
+  free(): void;
+
+  /**
+   * @returns {Uint8Array}
+   */
+  to_bytes(): Uint8Array;
+
+  /**
+   * @param {Uint8Array} bytes
+   * @returns {DRep}
+   */
+  static from_bytes(bytes: Uint8Array): DRep;
+
+  /**
+   * @returns {string}
+   */
+  to_hex(): string;
+
+  /**
+   * @param {string} hex_str
+   * @returns {DRep}
+   */
+  static from_hex(hex_str: string): DRep;
+
+  /**
+   * @returns {string}
+   */
+  to_json(): string;
+
+  /**
+   * @returns {DRepJSON}
+   */
+  to_js_value(): DRepJSON;
+
+  /**
+   * @param {string} json
+   * @returns {DRep}
+   */
+  static from_json(json: string): DRep;
+
+  /**
+   * @param {Ed25519KeyHash} key_hash
+   * @returns {DRep}
+   */
+  static new_key_hash(key_hash: Ed25519KeyHash): DRep;
+
+  /**
+   * @param {ScriptHash} script_hash
+   * @returns {DRep}
+   */
+  static new_script_hash(script_hash: ScriptHash): DRep;
+
+  /**
+   * @returns {DRep}
+   */
+  static new_always_abstain(): DRep;
+
+  /**
+   * @returns {DRep}
+   */
+  static new_always_no_confidence(): DRep;
+
+  /**
+   * @returns {number}
+   */
+  kind(): number;
+
+  /**
+   * @returns {Ed25519KeyHash | void}
+   */
+  to_key_hash(): Ed25519KeyHash | void;
+
+  /**
+   * @returns {ScriptHash | void}
+   */
+  to_script_hash(): ScriptHash | void;
 }
 /**
  */
@@ -7034,6 +7140,11 @@ declare export class StakeCredential {
   kind(): number;
 
   /**
+   * @returns {boolean}
+   */
+  has_script_hash(): boolean;
+
+  /**
    * @returns {Uint8Array}
    */
   to_bytes(): Uint8Array;
@@ -10177,6 +10288,71 @@ declare export class Vkeywitnesses {
 }
 /**
  */
+declare export class VoteDelegation {
+  free(): void;
+
+  /**
+   * @returns {Uint8Array}
+   */
+  to_bytes(): Uint8Array;
+
+  /**
+   * @param {Uint8Array} bytes
+   * @returns {VoteDelegation}
+   */
+  static from_bytes(bytes: Uint8Array): VoteDelegation;
+
+  /**
+   * @returns {string}
+   */
+  to_hex(): string;
+
+  /**
+   * @param {string} hex_str
+   * @returns {VoteDelegation}
+   */
+  static from_hex(hex_str: string): VoteDelegation;
+
+  /**
+   * @returns {string}
+   */
+  to_json(): string;
+
+  /**
+   * @returns {VoteDelegationJSON}
+   */
+  to_js_value(): VoteDelegationJSON;
+
+  /**
+   * @param {string} json
+   * @returns {VoteDelegation}
+   */
+  static from_json(json: string): VoteDelegation;
+
+  /**
+   * @returns {StakeCredential}
+   */
+  stake_credential(): StakeCredential;
+
+  /**
+   * @returns {DRep}
+   */
+  drep(): DRep;
+
+  /**
+   * @param {StakeCredential} stake_credential
+   * @param {DRep} drep
+   * @returns {VoteDelegation}
+   */
+  static new(stake_credential: StakeCredential, drep: DRep): VoteDelegation;
+
+  /**
+   * @returns {boolean}
+   */
+  has_script_credentials(): boolean;
+}
+/**
+ */
 declare export class Withdrawals {
   free(): void;
 
@@ -10313,6 +10489,46 @@ export type CertificateEnumJSON =
     }
   | {
       MoveInstantaneousRewardsCertJSON: MoveInstantaneousRewardsCert,
+      ...
+    }
+  | {
+      CommitteeHotAuth: CommitteeHotAuth,
+      ...
+    }
+  | {
+      CommitteeColdResign: CommitteeColdResign,
+      ...
+    }
+  | {
+      DRepDeregistration: DRepDeregistration,
+      ...
+    }
+  | {
+      DRepRegistration: DRepRegistration,
+      ...
+    }
+  | {
+      DRepUpdate: DRepUpdate,
+      ...
+    }
+  | {
+      StakeAndVoteDelegation: StakeAndVoteDelegation,
+      ...
+    }
+  | {
+      StakeRegistrationAndDelegation: StakeRegistrationAndDelegation,
+      ...
+    }
+  | {
+      StakeVoteRegistrationAndDelegation: StakeVoteRegistrationAndDelegation,
+      ...
+    }
+  | {
+      VoteDelegation: VoteDelegation,
+      ...
+    }
+  | {
+      VoteRegistrationAndDelegation: VoteRegistrationAndDelegation,
       ...
     };
 export type CertificatesJSON = CertificateJSON[];
