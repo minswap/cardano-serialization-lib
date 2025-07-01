@@ -27,7 +27,7 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install --ignore-scripts
-          npm install -g wasm-pack
+          npm install -g wasm-pack@0.10.1
 
       - name: Configure Git
         run: |
