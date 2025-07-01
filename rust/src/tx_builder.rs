@@ -68,7 +68,7 @@ pub fn get_ex_units(
         Ok(redeemers_bytes) => Ok(Redeemers(
             redeemers_bytes
                 .iter()
-                .map(|r| Redeemer::from_bytes(r.to_vec()).unwrap())
+                .map(|(r, _)| Redeemer::from_bytes(r.clone()).unwrap())
                 .collect(),
         )),
         Err(err) => Err(JsError::from_str(&err.to_string())),
@@ -101,6 +101,12 @@ fn witness_keys_for_cert(cert_enum: &Certificate) -> RequiredSigners {
         }
         // not witness as there is no single core node or genesis key that posts the certificate
         CertificateEnum::MoveInstantaneousRewardsCert(_cert) => {}
+        CertificateEnum::VoteDelegation(cert) => {
+            if let Some(key_hash) = cert.stake_credential().to_keyhash() {
+                set.add(&key_hash);
+            }
+        }
+        _ => {}
     }
     set
 }
@@ -2041,6 +2047,32 @@ mod tests {
 
     fn harden(index: u32) -> u32 {
         index | 0x80_00_00_00
+    }
+
+    #[test]
+    fn round_trip_drep() {
+        let drep= DRep::new_always_abstain();
+        let drep_hex = drep.to_hex();
+        assert_eq!(drep_hex, "8102");
+    }
+
+    #[test]
+    fn round_trip_vote_delegation() {
+        let key_hash = Ed25519KeyHash::from_hex("508f5c55f14d9ed00070eb9fb2f65b238b389af5bb881d5cbe1829e2").unwrap();
+        let drep = &DRep::new_key_hash(&key_hash);
+
+        let owner_key_hash = Ed25519KeyHash::from_hex("75ee8ab1dc2ccf6ad5929cd24b10e7be81a64662ae958a409e9bf5e3").unwrap();
+        let stake_credential = StakeCredential::from_keyhash(&owner_key_hash);
+
+        let vote_delegation = VoteDelegation::new(
+            &stake_credential,
+            drep,
+        );
+
+        let cert = Certificate::new_vote_delegation(&vote_delegation);
+        
+        let cert_hex = cert.to_hex();
+        assert_eq!(cert_hex, "83098200581c75ee8ab1dc2ccf6ad5929cd24b10e7be81a64662ae958a409e9bf5e38200581c508f5c55f14d9ed00070eb9fb2f65b238b389af5bb881d5cbe1829e2");
     }
 
     #[test]
