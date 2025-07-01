@@ -3,7 +3,6 @@ use crate::utils::*;
 use address::*;
 use crypto::*;
 use error::*;
-use core::panic;
 use std::io::{Seek, SeekFrom};
 
 // This file was code-generated using an experimental CDDL to rust tool:
@@ -1913,7 +1912,7 @@ impl SerializeEmbeddedGroup for VoteDelegation {
         &self,
         serializer: &'se mut Serializer<W>,
     ) -> cbor_event::Result<&'se mut Serializer<W>> {
-        serializer.write_unsigned_integer(15u64)?;
+        serializer.write_unsigned_integer(9u64)?;
         self.stake_credential.serialize(serializer)?;
         self.drep.serialize(serializer)?;
         Ok(serializer)

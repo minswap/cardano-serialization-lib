@@ -1073,6 +1073,9 @@ pub struct StakeRegistrationAndDelegation;
 pub struct StakeVoteRegistrationAndDelegation;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
+pub struct VoteRegistrationAndDelegation;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
 pub enum DRepEnum {
     KeyHash(Ed25519KeyHash),
     ScriptHash(ScriptHash),
@@ -1170,10 +1173,6 @@ impl VoteDelegation {
     }
 }
 
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema)]
-pub struct VoteRegistrationAndDelegation;
-
 #[wasm_bindgen]
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, JsonSchema,
@@ -1238,8 +1237,15 @@ impl Certificate {
                 CertificateKind::MoveInstantaneousRewardsCert
             }
             CertificateEnum::VoteDelegation(_) => CertificateKind::VoteDelegation,
-            // For all other variants, return a default or placeholder value, or handle as needed.
-            _ => panic!("CertificateKind not defined for this certificate variant"),
+            CertificateEnum::CommitteeHotAuth(_) => CertificateKind::CommitteeHotAuth,
+            CertificateEnum::CommitteeColdResign(_) => CertificateKind::CommitteeColdResign,
+            CertificateEnum::DRepDeregistration(_) => CertificateKind::DRepDeregistration,
+            CertificateEnum::DRepRegistration(_) => CertificateKind::DRepRegistration,
+            CertificateEnum::DRepUpdate(_) => CertificateKind::DRepUpdate,
+            CertificateEnum::StakeAndVoteDelegation(_) => CertificateKind::StakeAndVoteDelegation,
+            CertificateEnum::StakeRegistrationAndDelegation(_) => CertificateKind::StakeRegistrationAndDelegation,
+            CertificateEnum::StakeVoteRegistrationAndDelegation(_) => CertificateKind::StakeVoteRegistrationAndDelegation,
+            CertificateEnum::VoteRegistrationAndDelegation(_) => CertificateKind::VoteRegistrationAndDelegation,
         }
     }
 
