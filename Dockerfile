@@ -12,12 +12,12 @@ RUN rustc --version && cargo --version && node -v && npm -v
 # Set working directory
 WORKDIR /usr/src/app
 
-# Install a recent wasm-pack (v0.11.1) which works with newer wasm-bindgen
-RUN curl -L -o wasm-pack.tar.gz https://github.com/rustwasm/wasm-pack/releases/download/v0.11.1/wasm-pack-v0.11.1-x86_64-unknown-linux-musl.tar.gz \
+# Install a specific version of wasm-pack (v0.10.1 from 2021)
+RUN curl -L -o wasm-pack.tar.gz https://github.com/rustwasm/wasm-pack/releases/download/v0.10.1/wasm-pack-v0.10.1-x86_64-unknown-linux-musl.tar.gz \
     && tar -xzf wasm-pack.tar.gz \
-    && mv wasm-pack-v0.11.1-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack \
+    && mv wasm-pack-v0.10.1-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack \
     && chmod +x /usr/local/bin/wasm-pack \
-    && rm -rf wasm-pack.tar.gz wasm-pack-v0.11.1-x86_64-unknown-linux-musl
+    && rm -rf wasm-pack.tar.gz wasm-pack-v0.10.1-x86_64-unknown-linux-musl
 
 # Copy project files
 COPY . .
