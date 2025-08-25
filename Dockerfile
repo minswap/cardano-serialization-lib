@@ -1,5 +1,5 @@
 # Use Rust as the base image and install Node.js manually
-FROM rust:1.85 AS builder
+FROM rust:1.86 AS builder
 
 # Install required dependencies (Clang, Node.js, npm)
 RUN apt-get update && apt-get install -y curl pkg-config build-essential clang \
