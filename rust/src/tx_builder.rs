@@ -10,7 +10,6 @@ use crate::tx_builder::tx_inputs_builder::{get_bootstraps, TxInputsBuilder};
 use linked_hash_map::LinkedHashMap;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use tx_inputs_builder::{PlutusWitness, PlutusWitnesses};
-use uplc::tx::eval_phase_two_raw;
 
 #[wasm_bindgen]
 pub fn apply_params_to_plutus_script(
@@ -19,58 +18,6 @@ pub fn apply_params_to_plutus_script(
 ) -> Result<PlutusScript, JsError> {
     match uplc::tx::apply_params_to_script(&params.to_bytes(), &plutus_script.bytes()) {
         Ok(res) => Ok(PlutusScript::new(res)),
-        Err(err) => Err(JsError::from_str(&err.to_string())),
-    }
-}
-
-#[wasm_bindgen]
-pub fn get_ex_units(
-    tx: &Transaction,
-    utxos: &TransactionUnspentOutputs,
-    cost_mdls: &Costmdls,
-    max_ex_units: &ExUnits,
-    zero_time: BigNum,
-    zero_slot: BigNum,
-    slot_length: u32,
-) -> Result<Redeemers, JsError> {
-    let tx_bytes = tx.to_bytes();
-
-    let utxos_bytes: Vec<(Vec<u8>, Vec<u8>)> = utxos
-        .0
-        .iter()
-        .map(|utxo| (utxo.input.to_bytes(), utxo.output.to_bytes()))
-        .collect();
-
-    let cost_mdls_bytes = cost_mdls.to_bytes();
-
-    let initial_budget = (
-        from_bignum(&max_ex_units.steps()),
-        from_bignum(&max_ex_units.mem()),
-    );
-
-    let sc = (
-        from_bignum(&zero_time),
-        from_bignum(&zero_slot),
-        slot_length,
-    );
-
-    let result = eval_phase_two_raw(
-        &tx_bytes,
-        &utxos_bytes,
-        Some(&cost_mdls_bytes),
-        initial_budget,
-        sc,
-        false,
-        |_| (),
-    );
-
-    match result {
-        Ok(redeemers_bytes) => Ok(Redeemers(
-            redeemers_bytes
-                .iter()
-                .map(|(r, _)| Redeemer::from_bytes(r.clone()).unwrap())
-                .collect(),
-        )),
         Err(err) => Err(JsError::from_str(&err.to_string())),
     }
 }
@@ -6126,38 +6073,6 @@ mod tests {
         let witness_set2 = TransactionWitnessSet::from_bytes(r1).unwrap();
         let r2 = witness_set2.to_bytes();
         assert_eq!(hex::encode(r2), "a107814e4d01000033222220051200120011");
-    }
-
-    #[test]
-    fn test_get_ex_unit_hello_world() {
-        let transaction = Transaction::from_hex("84aa00838258202d53b05adccb4db639c1c826acca02ec9a4bbdcacbb88bc3f5eab652e9e71d76008258202d53b05adccb4db639c1c826acca02ec9a4bbdcacbb88bc3f5eab652e9e71d7601825820b81e90c259bca3d7252f3c529115e4a37a10d320525ea4285c16c0379a2da99000018282581d60f1edcccaa9054e89134b2850b3e4ea8d9ea28748f42f57809af4491d1a002dc6c082581d60f1edcccaa9054e89134b2850b3e4ea8d9ea28748f42f57809af4491d1a00c5b799021a000791ad031a01da0e410b582089249510f9a597a83513f27a8344edd06cc3490cbdb0103963dc7eb20ceb3dfe0d81825820b81e90c259bca3d7252f3c529115e4a37a10d320525ea4285c16c0379a2da990000e81581cf1edcccaa9054e89134b2850b3e4ea8d9ea28748f42f57809af4491d1082581d60f1edcccaa9054e89134b2850b3e4ea8d9ea28748f42f57809af4491d1a004c4b40111a004c4b4012818258200f6e76c45462e1696b1b5db05de5c7717a2d79020cef05c9fea5e315984f7d6b00a10581840000d8799f4d48656c6c6f2c20576f726c6421ff821a002dc6c01a77359400f5f6").unwrap();
-        let costModel = Costmdls::from_hex("a10198af1a0003236119032c01011903e819023b00011903e8195e7104011903e818201a0001ca761928eb041959d818641959d818641959d818641959d818641959d818641959d81864186418641959d81864194c5118201a0002acfa182019b551041a000363151901ff00011a00015c3518201a000797751936f404021a0002ff941a0006ea7818dc0001011903e8196ff604021a0003bd081a00034ec5183e011a00102e0f19312a011a00032e801901a5011a0002da781903e819cf06011a00013a34182019a8f118201903e818201a00013aac0119e143041903e80a1a00030219189c011a00030219189c011a0003207c1901d9011a000330001901ff0119ccf3182019fd40182019ffd5182019581e18201940b318201a00012adf18201a0002ff941a0006ea7818dc0001011a00010f92192da7000119eabb18201a0002ff941a0006ea7818dc0001011a0002ff941a0006ea7818dc0001011a0011b22c1a0005fdde00021a000c504e197712041a001d6af61a0001425b041a00040c660004001a00014fab18201a0003236119032c010119a0de18201a00033d7618201979f41820197fb8182019a95d1820197df718201995aa18201a0223accc0a1a0374f693194a1f0a1a02515e841980b30a").unwrap();
-        let mut utxos = TransactionUnspentOutputs::new();
-        utxos.add(
-            &TransactionUnspentOutput::from_hex("828258202d53b05adccb4db639c1c826acca02ec9a4bbdcacbb88bc3f5eab652e9e71d760182581d60f1edcccaa9054e89134b2850b3e4ea8d9ea28748f42f57809af4491d1a0034b2c6").unwrap()
-        );
-        utxos.add(
-            &TransactionUnspentOutput::from_hex("82825820b81e90c259bca3d7252f3c529115e4a37a10d320525ea4285c16c0379a2da9900082581d60f1edcccaa9054e89134b2850b3e4ea8d9ea28748f42f57809af4491d1a00989680").unwrap()
-        );
-        utxos.add(
-            &TransactionUnspentOutput::from_hex("828258202d53b05adccb4db639c1c826acca02ec9a4bbdcacbb88bc3f5eab652e9e71d7600a300581d7040c46ca36d4e8a415d689208735a24f2651e640b46aed5f51cf7199b011a002dc6c0028201d8185822d8799f581cf1edcccaa9054e89134b2850b3e4ea8d9ea28748f42f57809af4491dff").unwrap()
-        );
-        utxos.add(
-            &TransactionUnspentOutput::from_hex("828258200f6e76c45462e1696b1b5db05de5c7717a2d79020cef05c9fea5e315984f7d6b00a300583900016ad31ade77490b9967a9ae358b0a035021d50eb38a7c130ef65b3df9e9edfb460fae49f9754b2126513f4b0dacdc86ba8c90b562764fd3011a0030aa9803d8185901fb82025901f65901f30100003232323232323232323232322223232533300a3232533300c002100114a066646002002444a66602600429404c8c94ccc040cdc78010018a5113330050050010033016003375c60280046eb0cc01cc024cc01cc024011200048040dd71980398048012400066e3cdd7198031804001240009110d48656c6c6f2c20576f726c642100149858cc028c94ccc028cdc3a400000226464a66602260260042930a99807249334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375c6022002601000a2a660189212b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e7400163008004004330093253330093370e900000089919299980818090010a4c2a6601a9201334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016375c6020002600e0062a660169212b436f6e73747220696e64657820646964206e6f74206d6174636820616e7920747970652076617269616e740016300700200233001001480008888cccc01ccdc38008018069199980280299b8000448008c03c0040080088c01cdd5000918029baa0015734ae6d5ce2ab9d5573caae7d5d0aba201").unwrap()
-        );
-        let maxExUnits = ExUnits::from_hex("821a00d59f801b00000002540be400").unwrap();
-        let redeemer = get_ex_units(
-            &transaction,
-            &utxos,
-            &costModel,
-            &maxExUnits,
-            BigNum::from_str("1666656000000").unwrap(),
-            BigNum::from_str("0").unwrap(),
-            1000
-        ).unwrap();
-        assert_eq!(redeemer.len(), 1);
-        let redeemer = redeemer.get(0);
-        println!("redeemer: {}", redeemer.to_json().unwrap());
     }
 
     #[test]
