@@ -35,7 +35,10 @@ itertools = "0.10.1"
 rand = "0.8.4"
 schemars = "0.8.8"
 serde = { version = "1.0", features = ["derive"] }
-uplc = { git = "https://github.com/aiken-lang/aiken.git", rev = "e525483dd81e10861911a4ec320f05b30e586324", default-features = false }
+# Only `apply_params_to_script` is used here — script evaluation lives in
+# @minswap/wasm-helpers so a single uplc build decides ex-units. Keep this
+# revision in step with that package.
+uplc = { git = "https://github.com/aiken-lang/aiken.git", rev = "8949565a9969278846ffefe30bc3b892029dd318", default-features = false }
 
 # non-wasm
 [target.'cfg(not(all(target_arch = "wasm32", not(target_os = "emscripten"))))'.dependencies]
